@@ -11,9 +11,6 @@ from dury.utils import download_image
 from dury.crawler.base import SeleniumCrawler
 
 
-DRIVER_PATH = "./chromedriver"
-
-
 class PixivCrawler(SeleniumCrawler):
     LOGIN_URL = "https://accounts.pixiv.net/login"
     PIXIV_URL = "https://www.pixiv.net/"
@@ -26,25 +23,31 @@ class PixivCrawler(SeleniumCrawler):
         super(PixivCrawler, self).__init__(cfg)
         self.cookie_dict = self.login(cfg.PIXIV.USERNAME, cfg.PIXIV.PASSWORD)
 
-    def login(self, username, password, driver):
-        driver.get(self.LOGIN_URL)
-        login_element = driver.find_element_by_xpath("//div[@id='container-login']")
+    def login(self, username, password):
+        self.driver.get(self.PIXIV_URL)
+        self.delay()
+        self.driver.get(self.LOGIN_URL)
+        self.delay()
+
+        login_element = self.driver.find_element_by_xpath("//div[@id='container-login']")
         username_input_element = login_element.find_element_by_xpath(".//input[@type='text']")
         username_input_element.send_keys(username)
         password_input_element = login_element.find_element_by_xpath(".//input[@type='password']")
         password_input_element.send_keys(password)
-        loign_button = login_element.find_element_by_xpath(".//button")
-        loign_button.click()
+        login_button = login_element.find_element_by_xpath(".//button")
+        login_button.click()
 
         try:
-            element = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.ID, "root")))
+            element = WebDriverWait(self.driver, 60).until(EC.presence_of_element_located((By.ID, "root")))
         except Exception as e:
-            driver.save_screenshot("./temp/log_in_err.png")
-            driver.quit()
+            if not os.path.exists("tmp"):
+                os.makedirs("tmp", exist_ok=True)
+            self.driver.save_screenshot("./temp/login_err.png")
+            self.driver.quit()
             raise IOError("login sim wait failed, 'root' did not appear")
         
         cookies_dict = {}
-        cookies=driver.get_cookies()
+        cookies = self.driver.get_cookies()
         for cookie in cookies:
             cookies_dict[cookie['name']] = cookie['value']
 
@@ -102,18 +105,23 @@ class PixivCrawler(SeleniumCrawler):
 
 if __name__ == "__main__":
     import argparse
+    import json
     from dury.config import get_default_config
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config-file", required=True)
+    parser.add_argument("--author-file", required=True)
     args = parser.parse_args()
 
     cfg = get_default_config()
     cfg.merge_from_file(args.config_file)
     cfg.freeze()
 
+    with open(args.author_file, "r") as f:
+        authors = json.load(f)["authors"]
+
     crawler = PixivCrawler(cfg)
-    for author in tqdm(cfg.PIXIV.AUTHORS):
+    for author in tqdm(authors):
         crawler.run(author, cfg.OUTPUT_DIR)
 
     logger.info("Done")
