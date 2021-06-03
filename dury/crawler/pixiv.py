@@ -21,11 +21,12 @@ class PixivCrawler(SeleniumCrawler):
 
     def __init__(self, cfg: CfgNode) -> None:
         super(PixivCrawler, self).__init__(cfg)
-        self.cookie_dict = self.login(cfg.PIXIV.USERNAME, cfg.PIXIV.PASSWORD)
+
+        status = self.load_cookies(self.PIXIV_URL)
+        if status < 0:
+            self.login(cfg.PIXIV.USERNAME, cfg.PIXIV.PASSWORD)
 
     def login(self, username, password):
-        self.driver.get(self.PIXIV_URL)
-        self.delay()
         self.driver.get(self.LOGIN_URL)
         self.delay()
 
@@ -46,13 +47,7 @@ class PixivCrawler(SeleniumCrawler):
             self.driver.quit()
             raise IOError("login sim wait failed, 'root' did not appear")
         
-        cookies_dict = {}
-        cookies = self.driver.get_cookies()
-        for cookie in cookies:
-            cookies_dict[cookie['name']] = cookie['value']
-
-        return cookies_dict
-
+        self.save_cookies()
 
     def run(self, author, root_dir="output"):
         out_dir = os.path.join(root_dir, author)
@@ -94,8 +89,8 @@ class PixivCrawler(SeleniumCrawler):
                 logger.info(f"Download {image_url}")
                 status = download_image(image_url, out_path, self.REQUEST_HEADERS)
 
-            if status < 0:
-                logger.error(f"Failed to download {image_url}")
+                if status < 0:
+                    logger.error(f"Failed to download {image_url}")
 
         self.driver.close()
         first_tab = self.driver.window_handles[0]
