@@ -1,0 +1,6 @@
+output/
+*.jpg
+*.png
+.vscode/
+chromedriver
+config.json
