@@ -1,6 +1,7 @@
 output/
 *.jpg
 *.png
+*.json
 .vscode/
 chromedriver
-config.json
+configs/
