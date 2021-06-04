@@ -50,7 +50,7 @@ class PixivCrawler(SeleniumCrawler):
         self.save_cookies()
 
     def run(self, author, root_dir="output", limit=100, retry=2):
-        logger.error(f"Crawling target - {author}")
+        logger.info(f"Crawling target - {author}")
         out_dir = os.path.join(root_dir, author)
         os.makedirs(out_dir, exist_ok=True)
 
@@ -84,8 +84,10 @@ class PixivCrawler(SeleniumCrawler):
             image_cards = self.driver.find_elements(By.XPATH, "//div[@type='illust']")
             latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
         except:
+            logger.error(f"Retry process for {author} - {retry - 1}")
             return self.run(author, root_dir, limit, retry - 1)
 
+        logger.info("Start to download artworks")
         self.download_artworks(latest_illust_url, out_dir, recursive=True, limit=limit)
 
         self.driver.close()
@@ -107,11 +109,12 @@ class PixivCrawler(SeleniumCrawler):
                 image_name = image_url.split("/")[-1]
                 out_path = os.path.join(out_dir, image_name)
 
-                logger.error(f"Download {image_url}")
+                logger.error(f"Downloading {image_url}")
                 status = download_image(image_url, out_path, self.REQUEST_HEADERS)
                 if status < 0:
                     logger.error(f"Failed to download {image_url}")
         except:
+            logger.error(f"Retry to download {url} - {retry - 1}")
             self.download_artworks(url, out_dir, recursive, retry - 1)
 
         if recursive and limit > 0:
