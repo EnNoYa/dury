@@ -54,11 +54,15 @@ class PixivCrawler(SeleniumCrawler):
         os.makedirs(out_dir, exist_ok=True)
 
         self.driver.get(self.PIXIV_URL)
+        self.delay()
+
+        # Enter author name to searchbar
         search_element = self.driver.find_element_by_xpath("//input[@type='text']")
         search_element.send_keys(author)
         search_element.submit()
         self.delay()
 
+        # Find user and go to users page
         user_href = self.driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
         user_href.click()
         self.delay()
@@ -68,17 +72,28 @@ class PixivCrawler(SeleniumCrawler):
         target.click()
         self.delay()
 
+        # Switch to illustrations page
         last_tab = self.driver.window_handles[-1]
         self.driver.switch_to.window(window_name=last_tab)
         self.driver.find_element(By.PARTIAL_LINK_TEXT, "일러스트").click()
         self.delay()
         
+        # Visit each artworks page recursively
         image_cards = self.driver.find_elements(By.XPATH, "//div[@type='illust']")
-        target_urls = [ image_card.find_element(By.TAG_NAME, "a").get_attribute("href") for image_card in image_cards ]
-        for target_url in target_urls:
-            self.driver.get(target_url)
-            self.delay()
+        latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
+        self.download_artworks(latest_illust_url, out_dir, recursive=True)
 
+        self.driver.close()
+        first_tab = self.driver.window_handles[0]
+        self.driver.switch_to.window(window_name=first_tab)
+
+        return self.driver
+
+    def download_artworks(self, url, out_dir, recursive=False, retry=2):
+        try:
+            self.driver.get(url)
+            self.delay()
+            
             figure = self.driver.find_element(By.TAG_NAME, "figure")
             image_elements = figure.find_elements(By.TAG_NAME, "img")
             
@@ -86,17 +101,21 @@ class PixivCrawler(SeleniumCrawler):
                 image_url = image_element.get_attribute("src")
                 image_name = image_url.split("/")[-1]
                 out_path = os.path.join(out_dir, image_name)
-                logger.info(f"Download {image_url}")
-                status = download_image(image_url, out_path, self.REQUEST_HEADERS)
 
+                status = download_image(image_url, out_path, self.REQUEST_HEADERS)
                 if status < 0:
                     logger.error(f"Failed to download {image_url}")
+        except:
+            self.download_artworks(url, out_dir, recursive, retry - 1)
 
-        self.driver.close()
-        first_tab = self.driver.window_handles[0]
-        self.driver.switch_to.window(window_name=first_tab)
+        if recursive:
+            nav = self.driver.find_elements(By.TAG_NAME, "nav")[-1]
+            nav_elements = nav.find_elements(By.TAG_NAME, "a")
+            last_nav_url = nav_elements[-1].get_attribute("href")
+            
+            if self.driver.current_url != last_nav_url:
+                self.download_artworks(last_nav_url, out_dir, recursive)
 
-        return self.driver
 
 if __name__ == "__main__":
     import argparse
