@@ -49,7 +49,7 @@ class PixivCrawler(SeleniumCrawler):
         
         self.save_cookies()
 
-    def run(self, author, root_dir="output"):
+    def run(self, author, root_dir="output", limit=100):
         out_dir = os.path.join(root_dir, author)
         os.makedirs(out_dir, exist_ok=True)
 
@@ -81,7 +81,7 @@ class PixivCrawler(SeleniumCrawler):
         # Visit each artworks page recursively
         image_cards = self.driver.find_elements(By.XPATH, "//div[@type='illust']")
         latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
-        self.download_artworks(latest_illust_url, out_dir, recursive=True)
+        self.download_artworks(latest_illust_url, out_dir, recursive=True, limit=limit)
 
         self.driver.close()
         first_tab = self.driver.window_handles[0]
@@ -89,7 +89,7 @@ class PixivCrawler(SeleniumCrawler):
 
         return self.driver
 
-    def download_artworks(self, url, out_dir, recursive=False, retry=2):
+    def download_artworks(self, url, out_dir, recursive=False, retry=2, limit=100):
         try:
             self.driver.get(url)
             self.delay()
@@ -108,13 +108,13 @@ class PixivCrawler(SeleniumCrawler):
         except:
             self.download_artworks(url, out_dir, recursive, retry - 1)
 
-        if recursive:
+        if recursive and limit > 0:
             nav = self.driver.find_elements(By.TAG_NAME, "nav")[-1]
             nav_elements = nav.find_elements(By.TAG_NAME, "a")
             last_nav_url = nav_elements[-1].get_attribute("href")
             
             if self.driver.current_url != last_nav_url:
-                self.download_artworks(last_nav_url, out_dir, recursive)
+                self.download_artworks(last_nav_url, out_dir, recursive, limit - 1)
 
 
 if __name__ == "__main__":
@@ -125,6 +125,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config-file", required=True)
     parser.add_argument("--author-file", required=True)
+    parser.add_argument("--limit", default=100, type=int)
     args = parser.parse_args()
 
     cfg = get_default_config()
@@ -136,6 +137,6 @@ if __name__ == "__main__":
 
     crawler = PixivCrawler(cfg)
     for author in tqdm(authors):
-        crawler.run(author, cfg.OUTPUT_DIR)
+        crawler.run(author, cfg.OUTPUT_DIR, limit=args.limit)
 
     logger.info("Done")
