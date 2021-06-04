@@ -59,12 +59,14 @@ class PixivCrawler(SeleniumCrawler):
 
         try:
             # Enter author name to searchbar
+            logger.info("Enter search bar")
             search_element = self.driver.find_element_by_xpath("//input[@type='text']")
             search_element.send_keys(author)
             search_element.submit()
             self.delay()
 
             # Find user and go to users page
+            logger.info("Find user")
             user_href = self.driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
             user_href.click()
             self.delay()
@@ -75,6 +77,7 @@ class PixivCrawler(SeleniumCrawler):
             self.delay()
 
             # Switch to illustrations page
+            logger.info("Switch to illustrations page")
             last_tab = self.driver.window_handles[-1]
             self.driver.switch_to.window(window_name=last_tab)
             self.driver.find_element(By.PARTIAL_LINK_TEXT, "일러스트").click()
@@ -98,6 +101,7 @@ class PixivCrawler(SeleniumCrawler):
 
     def download_artworks(self, url, out_dir, recursive=False, retry=2, limit=100):
         try:
+            logger.info(f"Move to {url}")
             self.driver.get(url)
             self.delay()
             
@@ -109,7 +113,7 @@ class PixivCrawler(SeleniumCrawler):
                 image_name = image_url.split("/")[-1]
                 out_path = os.path.join(out_dir, image_name)
 
-                logger.error(f"Downloading {image_url}")
+                logger.info(f"Downloading {image_url}")
                 status = download_image(image_url, out_path, self.REQUEST_HEADERS)
                 if status < 0:
                     logger.error(f"Failed to download {image_url}")

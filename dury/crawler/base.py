@@ -8,9 +8,13 @@ class SeleniumCrawler:
     def __init__(self, cfg) -> None:
         self.cookie_file = cfg.SELENIUM.COOKIE_FILE
         self.safe_delay = cfg.SELENIUM.SAFE_DELAY
-        self.driver = self.launch(cfg.SELENIUM.CHROMEDRIVER_PATH, cfg.SELENIUM.HEADLESS)
+        self.driver = self.launch(
+            cfg.SELENIUM.CHROMEDRIVER_PATH,
+            cfg.SELENIUM.HEADLESS,
+            cfg.SELENIUM.IMPLICITLY_WAIT
+        )
 
-    def launch(self, driver_path, headless=False) -> webdriver:
+    def launch(self, driver_path, headless=False, implicitly_wait=10) -> webdriver:
         options = webdriver.ChromeOptions()
         if headless:
             options.add_argument("--headless")
@@ -18,6 +22,7 @@ class SeleniumCrawler:
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--remote-debugging-port=9222")
         driver = webdriver.Chrome(executable_path=driver_path, chrome_options=options)
+        driver.implicitly_wait(implicitly_wait)
         return driver
 
     def delay(self) -> None:
