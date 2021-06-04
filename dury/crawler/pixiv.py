@@ -49,38 +49,43 @@ class PixivCrawler(SeleniumCrawler):
         
         self.save_cookies()
 
-    def run(self, author, root_dir="output", limit=100):
+    def run(self, author, root_dir="output", limit=100, retry=2):
+        logger.error(f"Crawling target - {author}")
         out_dir = os.path.join(root_dir, author)
         os.makedirs(out_dir, exist_ok=True)
 
         self.driver.get(self.PIXIV_URL)
         self.delay()
 
-        # Enter author name to searchbar
-        search_element = self.driver.find_element_by_xpath("//input[@type='text']")
-        search_element.send_keys(author)
-        search_element.submit()
-        self.delay()
+        try:
+            # Enter author name to searchbar
+            search_element = self.driver.find_element_by_xpath("//input[@type='text']")
+            search_element.send_keys(author)
+            search_element.submit()
+            self.delay()
 
-        # Find user and go to users page
-        user_href = self.driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
-        user_href.click()
-        self.delay()
+            # Find user and go to users page
+            user_href = self.driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
+            user_href.click()
+            self.delay()
 
-        target = self.driver.find_elements(By.CLASS_NAME, "user-recommendation-item")[0]
-        target = target.find_element(By.CLASS_NAME, "title")
-        target.click()
-        self.delay()
+            target = self.driver.find_elements(By.CLASS_NAME, "user-recommendation-item")[0]
+            target = target.find_element(By.CLASS_NAME, "title")
+            target.click()
+            self.delay()
 
-        # Switch to illustrations page
-        last_tab = self.driver.window_handles[-1]
-        self.driver.switch_to.window(window_name=last_tab)
-        self.driver.find_element(By.PARTIAL_LINK_TEXT, "일러스트").click()
-        self.delay()
-        
-        # Visit each artworks page recursively
-        image_cards = self.driver.find_elements(By.XPATH, "//div[@type='illust']")
-        latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
+            # Switch to illustrations page
+            last_tab = self.driver.window_handles[-1]
+            self.driver.switch_to.window(window_name=last_tab)
+            self.driver.find_element(By.PARTIAL_LINK_TEXT, "일러스트").click()
+            self.delay()
+
+            # Visit each artworks page recursively
+            image_cards = self.driver.find_elements(By.XPATH, "//div[@type='illust']")
+            latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
+        except:
+            return self.run(author, root_dir, limit, retry - 1)
+
         self.download_artworks(latest_illust_url, out_dir, recursive=True, limit=limit)
 
         self.driver.close()
@@ -102,6 +107,7 @@ class PixivCrawler(SeleniumCrawler):
                 image_name = image_url.split("/")[-1]
                 out_path = os.path.join(out_dir, image_name)
 
+                logger.error(f"Download {image_url}")
                 status = download_image(image_url, out_path, self.REQUEST_HEADERS)
                 if status < 0:
                     logger.error(f"Failed to download {image_url}")
