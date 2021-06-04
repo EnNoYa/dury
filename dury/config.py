@@ -11,6 +11,7 @@ _C.SELENIUM = CN()
 _C.SELENIUM.CHROMEDRIVER_PATH = "./chromedriver"
 _C.SELENIUM.SAFE_DELAY = 2 # force deply for safe navigation (seconds)
 _C.SELENIUM.COOKIE_FILE = "cookies.json"
+_C.SELENIUM.HEADLESS = False
 
 # Configs for pixiv
 _C.PIXIV = CN()
