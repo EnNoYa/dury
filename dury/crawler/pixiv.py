@@ -22,6 +22,9 @@ class PixivCrawler(SeleniumCrawler):
     def __init__(self, cfg: CfgNode) -> None:
         super(PixivCrawler, self).__init__(cfg)
 
+        self.retry = cfg.PIXIV.RETRY
+        self.limit = cfg.PIXIV.LIMIT
+
         status = self.load_cookies(self.PIXIV_URL)
         if status < 0:
             self.login(cfg.PIXIV.USERNAME, cfg.PIXIV.PASSWORD)
@@ -49,7 +52,7 @@ class PixivCrawler(SeleniumCrawler):
         
         self.save_cookies()
 
-    def run(self, author, root_dir="output", limit=100, retry=2):
+    def run_on_author(self, author, root_dir="output"):
         logger.info(f"Crawling target - {author}")
         out_dir = os.path.join(root_dir, author)
         os.makedirs(out_dir, exist_ok=True)
@@ -57,41 +60,36 @@ class PixivCrawler(SeleniumCrawler):
         self.driver.get(self.PIXIV_URL)
         self.delay()
 
-        try:
-            # Enter author name to searchbar
-            logger.info("Enter search bar")
-            search_element = self.driver.find_element_by_xpath("//input[@type='text']")
-            search_element.send_keys(author)
-            search_element.submit()
-            self.delay()
+        # Enter author name to searchbar
+        self.search(author)
+        self.delay()
 
-            # Find user and go to users page
-            logger.info("Find user")
-            user_href = self.driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
-            user_href.click()
-            self.delay()
+        # Switch to user tab in search result
+        self.select_user()
+        self.delay()
 
-            target = self.driver.find_elements(By.CLASS_NAME, "user-recommendation-item")[0]
-            target = target.find_element(By.CLASS_NAME, "title")
-            target.click()
-            self.delay()
+        # Go to top user page
+        target = self.driver.find_elements(By.CLASS_NAME, "user-recommendation-item")[0]
+        target = target.find_element(By.CLASS_NAME, "title")
+        target.click()
+        self.delay()
 
-            # Switch to illustrations page
-            logger.info("Switch to illustrations page")
-            last_tab = self.driver.window_handles[-1]
-            self.driver.switch_to.window(window_name=last_tab)
-            self.driver.find_element(By.PARTIAL_LINK_TEXT, "일러스트").click()
-            self.delay()
+        # New tab is created after link to user page is clicked
+        last_tab = self.driver.window_handles[-1]
 
-            # Visit each artworks page recursively
-            image_cards = self.driver.find_elements(By.XPATH, "//div[@type='illust']")
-            latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
-        except:
-            logger.error(f"Retry process for {author} - {retry - 1}")
-            return self.run(author, root_dir, limit, retry - 1)
+        # Switch to illustrations page
+        logger.info("Switch to illustrations page")
+        self.driver.switch_to.window(window_name=last_tab)
+        illust_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "일러스트")
+        illust_link.click()
+        self.delay()
+
+        # Visit each artworks page recursively
+        image_cards = self.driver.find_elements(By.XPATH, "//div[@type='illust']")
+        latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
 
         logger.info("Start to download artworks")
-        self.download_artworks(latest_illust_url, out_dir, recursive=True, limit=limit)
+        self.download_artworks(latest_illust_url, out_dir, recursive=True, limit=self.limit, retry=self.retry)
 
         self.driver.close()
         first_tab = self.driver.window_handles[0]
@@ -99,13 +97,24 @@ class PixivCrawler(SeleniumCrawler):
 
         return self.driver
 
-    def download_artworks(self, url, out_dir, recursive=False, retry=2, limit=100):
+    def search(self, keyword):
+        logger.info("Enter search bar")
+        search_element = self.driver.find_element_by_xpath("//input[@type='text']")
+        search_element.send_keys(keyword)
+        search_element.submit()
+    
+    def select_user(self):
+        logger.info("Select user on search result")
+        user_href = self.driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
+        user_href.click()
+
+    def download_artworks(self, url, out_dir, recursive=False, limit=100, retry=2):
         try:
             logger.info(f"Move to {url}")
             self.driver.get(url)
-            self.delay()
             
-            figure = self.driver.find_element(By.TAG_NAME, "figure")
+            figure = self.explicitly_wait(5, EC.presence_of_element_located((By.TAG_NAME, "figure")))
+            self.delay()
             image_elements = figure.find_elements(By.TAG_NAME, "img")
             
             for image_element in image_elements:
@@ -119,18 +128,22 @@ class PixivCrawler(SeleniumCrawler):
                 logger.info(f"Download {image_url}")
                 status = download_image(image_url, out_path, self.REQUEST_HEADERS)
                 if status < 0:
-                    logger.error(f"Failed to download {image_url}")
-        except:
-            logger.error(f"Retry to download {url} - {retry - 1}")
-            self.download_artworks(url, out_dir, recursive, retry - 1, limit - 1)
+                    raise IOError(f"Failed to download {url}")
 
-        if recursive and limit > 0:
-            nav = self.driver.find_elements(By.TAG_NAME, "nav")[-1]
-            nav_elements = nav.find_elements(By.TAG_NAME, "a")
-            last_nav_url = nav_elements[-1].get_attribute("href")
-            
-            if self.driver.current_url != last_nav_url:
-                self.download_artworks(last_nav_url, out_dir, recursive, 2, limit - 1)
+            if recursive and limit > 0:
+                nav = self.driver.find_elements(By.TAG_NAME, "nav")[-1]
+                nav_elements = nav.find_elements(By.TAG_NAME, "a")
+                last_nav_url = nav_elements[-1].get_attribute("href")
+                
+                if self.driver.current_url != last_nav_url:
+                    self.download_artworks(last_nav_url, out_dir, recursive, limit - 1, self.retry)
+        except Exception as e:
+            if retry > 0:
+                logger.error(f"Retry to download {url} - {retry - 1}")
+                self.download_artworks(url, out_dir, recursive, limit, retry - 1)
+            else:
+                logger.error(e)
+                # do something...
 
 
 if __name__ == "__main__":
@@ -141,7 +154,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config-file", required=True)
     parser.add_argument("--author-file", required=True)
-    parser.add_argument("--limit", default=100, type=int)
     args = parser.parse_args()
 
     cfg = get_default_config()
@@ -153,6 +165,6 @@ if __name__ == "__main__":
 
     crawler = PixivCrawler(cfg)
     for author in tqdm(authors):
-        crawler.run(author, cfg.OUTPUT_DIR, limit=args.limit)
+        crawler.run_on_author(author, cfg.OUTPUT_DIR)
 
     logger.info("Done")

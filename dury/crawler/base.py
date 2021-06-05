@@ -1,4 +1,7 @@
 from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
 import json
 import time
 import os
@@ -27,6 +30,9 @@ class SeleniumCrawler:
 
     def delay(self) -> None:
         time.sleep(self.safe_delay)
+
+    def explicitly_wait(self, timeout, condition):
+        return WebDriverWait(self.driver, timeout).until(condition)
 
     def save_cookies(self):
         cookies = self.driver.get_cookies()
