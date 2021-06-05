@@ -112,8 +112,11 @@ class PixivCrawler(SeleniumCrawler):
                 image_url = image_element.get_attribute("src")
                 image_name = image_url.split("/")[-1]
                 out_path = os.path.join(out_dir, image_name)
-
-                logger.info(f"Downloading {image_url}")
+                if os.path.exists(out_path):
+                    logger.info(f"Skip download {image_url}")
+                    continue
+                
+                logger.info(f"Download {image_url}")
                 status = download_image(image_url, out_path, self.REQUEST_HEADERS)
                 if status < 0:
                     logger.error(f"Failed to download {image_url}")
