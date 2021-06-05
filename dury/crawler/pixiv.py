@@ -119,7 +119,7 @@ class PixivCrawler(SeleniumCrawler):
                     logger.error(f"Failed to download {image_url}")
         except:
             logger.error(f"Retry to download {url} - {retry - 1}")
-            self.download_artworks(url, out_dir, recursive, retry - 1)
+            self.download_artworks(url, out_dir, recursive, retry - 1, limit - 1)
 
         if recursive and limit > 0:
             nav = self.driver.find_elements(By.TAG_NAME, "nav")[-1]
@@ -127,7 +127,7 @@ class PixivCrawler(SeleniumCrawler):
             last_nav_url = nav_elements[-1].get_attribute("href")
             
             if self.driver.current_url != last_nav_url:
-                self.download_artworks(last_nav_url, out_dir, recursive, limit - 1)
+                self.download_artworks(last_nav_url, out_dir, recursive, 2, limit - 1)
 
 
 if __name__ == "__main__":
