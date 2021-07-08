@@ -18,6 +18,7 @@ class PixivCrawler(SeleniumCrawler):
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
         "Referer": "https://www.pixiv.net/"
     }
+    VALID_MODE_LIST = ["keyword", "author"]
 
     def __init__(self, cfg: CfgNode) -> None:
         super(PixivCrawler, self).__init__(cfg)
@@ -29,7 +30,7 @@ class PixivCrawler(SeleniumCrawler):
         if status < 0:
             self.login(cfg.PIXIV.USERNAME, cfg.PIXIV.PASSWORD)
 
-    def login(self, username, password):
+    def login(self, username: str, password: str):
         self.driver.get(self.LOGIN_URL)
         self.delay()
 
@@ -52,18 +53,59 @@ class PixivCrawler(SeleniumCrawler):
         
         self.save_cookies()
 
-    def run_on_author(self, author, root_dir="output"):
-        logger.info(f"Crawling target - {author}")
-        out_dir = os.path.join(root_dir, author)
-        os.makedirs(out_dir, exist_ok=True)
+    def setup(self, target: str, mode: str, root_dir: str):
+        output_dir = os.path.join(root_dir, mode, target)
+        os.makedirs(output_dir, exist_ok=True)
 
         self.driver.get(self.PIXIV_URL)
         self.delay()
 
-        # Enter author name to searchbar
-        self.search(author)
+        self.search(target)
         self.delay()
 
+        return output_dir
+
+    def run(self, target: str, mode: str, root_dir: str = "output"):
+        try:
+            assert mode in self.VALID_MODE_LIST, "Invalid mode"
+
+            logger.info(f"Crawling target - {target}")
+            output_dir = self.setup(target, mode, root_dir)
+
+            if mode == "keyword":
+                self.run_on_keyword(output_dir)
+            elif mode == "author":
+                self.run_on_author(output_dir)
+            else:
+                raise NotImplementedError
+        except Exception as e:
+            logger.error(e)
+        finally:
+            self.driver.close()
+ 
+    def run_on_keyword(self, output_dir: str = "output"):
+        # Visit all cards in each page recursively
+        artwork_urls = []
+
+        while len(artwork_urls) < self.limit:
+            next_page = self.get_next_page()
+            image_cards = self.find_cards()
+            artwork_urls += [
+                image_card.find_element(By.TAG_NAME, "a").get_attribute("href")
+                for image_card in image_cards
+            ]
+            self.driver.get(next_page)
+            self.delay()
+
+        logger.info("Start to download artworks")
+        for artwork_url in artwork_urls[:self.limit]:
+            self.download_artworks(
+                artwork_url, output_dir,
+                recursive=False,
+                retry=self.retry
+            )
+
+    def run_on_author(self, output_dir: str = "output"):
         # Switch to user tab in search result
         self.select_user()
         self.delay()
@@ -85,11 +127,11 @@ class PixivCrawler(SeleniumCrawler):
         self.delay()
 
         # Visit each artworks page recursively
-        image_cards = self.driver.find_elements(By.XPATH, "//div[@type='illust']")
+        image_cards = self.find_cards()
         latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
 
         logger.info("Start to download artworks")
-        self.download_artworks(latest_illust_url, out_dir, recursive=True, limit=self.limit, retry=self.retry)
+        self.download_artworks(latest_illust_url, output_dir, recursive=True, limit=self.limit, retry=self.retry)
 
         self.driver.close()
         first_tab = self.driver.window_handles[0]
@@ -103,12 +145,23 @@ class PixivCrawler(SeleniumCrawler):
         search_element.send_keys(keyword)
         search_element.submit()
     
+    def find_cards(self):
+        section = self.driver.find_elements(By.TAG_NAME,"section")[0]
+        image_cards = section.find_elements(By.TAG_NAME, "li")
+        return image_cards
+
+    def get_next_page(self):
+        nav_bar = self.driver.find_elements(By.TAG_NAME, "nav")
+        nav_links = nav_bar[-1].find_elements(By.TAG_NAME, "a")
+        next_page = nav_links[-1].get_attribute("href")
+        return next_page
+
     def select_user(self):
         logger.info("Select user on search result")
         user_href = self.driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
         user_href.click()
 
-    def download_artworks(self, url, out_dir, recursive=False, limit=100, retry=2):
+    def download_artworks(self, url, output_dir, recursive=False, limit=100, retry=2):
         try:
             logger.info(f"Move to {url}")
             self.driver.get(url)
@@ -120,7 +173,7 @@ class PixivCrawler(SeleniumCrawler):
             for image_element in image_elements:
                 image_url = image_element.get_attribute("src")
                 image_name = image_url.split("/")[-1]
-                out_path = os.path.join(out_dir, image_name)
+                out_path = os.path.join(output_dir, image_name)
                 if os.path.exists(out_path):
                     logger.info(f"Skip download {image_url}")
                     continue
@@ -136,11 +189,11 @@ class PixivCrawler(SeleniumCrawler):
                 last_nav_url = nav_elements[-1].get_attribute("href")
                 
                 if self.driver.current_url != last_nav_url:
-                    self.download_artworks(last_nav_url, out_dir, recursive, limit - 1, self.retry)
+                    self.download_artworks(last_nav_url, output_dir, recursive, limit - 1, self.retry)
         except Exception as e:
             if retry > 0:
                 logger.error(f"Retry to download {url} - {retry - 1}")
-                self.download_artworks(url, out_dir, recursive, limit, retry - 1)
+                self.download_artworks(url, output_dir, recursive, limit, retry - 1)
             else:
                 logger.error(e)
                 # do something...
@@ -153,18 +206,16 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config-file", required=True)
-    parser.add_argument("--author-file", required=True)
+    parser.add_argument("--mode", choices=["author", "keyword"], required=True)
+    parser.add_argument("--target", type=str, required=True)
     args = parser.parse_args()
 
     cfg = get_default_config()
     cfg.merge_from_file(args.config_file)
     cfg.freeze()
 
-    with open(args.author_file, "r") as f:
-        authors = json.load(f)["authors"]
-
     crawler = PixivCrawler(cfg)
-    for author in tqdm(authors):
-        crawler.run_on_author(author, cfg.OUTPUT_DIR)
+
+    crawler.run(args.target, args.mode, cfg.OUTPUT_DIR)
 
     logger.info("Done")
