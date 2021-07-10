@@ -146,3 +146,4 @@ output/
 chromedriver
 configs/
 tmp/
+video/

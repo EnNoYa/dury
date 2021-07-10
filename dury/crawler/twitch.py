@@ -1,7 +1,9 @@
-from os import access
 import requests
+import re
+import os
+from typing import List, Optional, Union, Dict, Any
 
-from typing import List, Optional, Union
+from dury.utils import distributed_download
 
 
 class TwitchClient():
@@ -59,27 +61,30 @@ class TwitchClient():
         pagination = res["pagination"]
         return videos, pagination
 
-    def download_video(self, video_id: str, bitrate: Optional[str] = "720p60"):
+    def download_video(
+        self,
+        video_id: str, *,
+        bitrate: Optional[str] = "720p60",
+        output_dir: Optional[str] = "video",
+        video_name: Optional[str] = None 
+    ):
         assert bitrate in [
             '160p30', '360p30', '480p30', '720p30',
             '720p60', 'audio_only', 'chunked'
         ], "Invalid bitrate"
 
+        os.makedirs(output_dir, exist_ok=True)
+
         access_token = self._get_access_token(video_id)["videoPlaybackAccessToken"]
+        video_uri = self._get_video_uri(video_id, access_token, bitrate=bitrate)
 
-        playlists_url = self.PLAYLISTS_URL.format(video_id)
-        res = requests.get(playlists_url, params={
-            "nauthsig": access_token["signature"],
-            "nauth": access_token["value"],
-            "allow_source": "true",
-            "player": "twitchweb",
-            "allow_spectre": "true",
-            "allow_audio_only": "true"
-        })
-        playlists = res.text.split("\n")
-        playlist_url = list(filter(lambda x: x[:5] == "https" and bitrate in x, playlists))[0]
+        chunk_uris = self._get_chunk_uris(video_uri)
 
-        return res
+        if video_name is None:
+            video_name = video_id
+        out_path = os.path.join(output_dir, f"{video_name}_{bitrate}.mp4")
+        status = distributed_download(chunk_uris, out_path)
+        return status
 
     def _get_access_token(self, video_id: str):
         query = """
@@ -102,6 +107,34 @@ class TwitchClient():
         res = requests.post(self.PRIVATE_API_URL, json={"query": query}, headers=headers)
         access_token = res.json()["data"]
         return access_token
+
+    def _get_video_uri(
+        self,
+        video_id: str,
+        access_token: Dict[str, Any], *,
+        bitrate: Optional[str] = "720p60"
+    ):
+        playlists_url = self.PLAYLISTS_URL.format(video_id)
+        res = requests.get(playlists_url, params={
+            "nauthsig": access_token["signature"],
+            "nauth": access_token["value"],
+            "allow_source": "true",
+            "player": "twitchweb",
+            "allow_spectre": "true",
+            "allow_audio_only": "true"
+        })
+        playlists = res.text.split("\n")
+        video_uri = list(filter(lambda x: x[:5] == "https" and bitrate in x, playlists))[0]
+        return video_uri
+
+    def _get_chunk_uris(self, video_uri: str):
+        res = requests.get(video_uri)
+        chunk_list = res.text.split("\n")
+        chunk_list = list(filter(lambda x: re.match("(\w|\d)+\.ts", x), chunk_list))
+
+        base_url = os.path.dirname(video_uri)
+        chunk_uris = [ f"{base_url}/{chunk}" for chunk in chunk_list ]
+        return chunk_uris
 
     def _create_request(self, path: str, query: str):
         res = requests.get(
@@ -134,5 +167,5 @@ if __name__ == "__main__":
     videos, pagination = client.get_videos(user_ids[0], first=20)
     video_id = "1081430996"
 
-    test = client.download_video(video_id)
+    test = client.download_video(video_id, video_name="test", bitrate="160p30")
     print("Done")

@@ -7,7 +7,7 @@ import os
 
 from yacs.config import CfgNode
 
-from dury.utils import download_image
+from dury.utils import download
 from dury.crawler.base import SeleniumCrawler
 
 
@@ -179,7 +179,7 @@ class PixivCrawler(SeleniumCrawler):
                     continue
                 
                 logger.info(f"Download {image_url}")
-                status = download_image(image_url, out_path, self.REQUEST_HEADERS)
+                status = download(image_url, out_path, self.REQUEST_HEADERS)
                 if status < 0:
                     raise IOError(f"Failed to download {url}")
 
