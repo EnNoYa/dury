@@ -43,6 +43,51 @@ class TwitchClient():
         channel_information = self._create_request("channels", query)["data"]
         return channel_information
 
+    def get_channel_emotes(self):
+        pass
+
+    def get_channel_chat_badges(self):
+        pass
+
+    def get_clips(self):
+        pass
+    
+    def get_top_games(self):
+        pass
+
+    def get_games(self):
+        pass
+
+    def search_categories(self):
+        pass
+
+    def search_channels(self):
+        pass
+
+    def get_streams(self):
+        pass
+
+    def check_broadcaster_subscription(self):
+        pass
+
+    def check_user_subscription(self):
+        pass
+
+    def get_all_stream_tags(self):
+        pass
+
+    def get_stream_tags(self):
+        pass
+
+    def get_teams(self):
+        pass
+
+    def get_users(self):
+        pass
+
+    def get_user_follows(self):
+        pass
+
     def get_videos(
         self,
         user_id: str, *,
