@@ -2,7 +2,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from loguru import logger
-from tqdm import tqdm
 import os
 
 from yacs.config import CfgNode
@@ -44,14 +43,13 @@ class PixivCrawler(SeleniumCrawler):
 
         try:
             element = WebDriverWait(self.driver, 60).until(EC.presence_of_element_located((By.ID, "root")))
+            self.save_cookies()
         except Exception as e:
             if not os.path.exists("tmp"):
                 os.makedirs("tmp", exist_ok=True)
             self.driver.save_screenshot("./temp/login_err.png")
             self.driver.quit()
             raise IOError("login sim wait failed, 'root' did not appear")
-        
-        self.save_cookies()
 
     def setup(self, target: str, mode: str, root_dir: str):
         output_dir = os.path.join(root_dir, mode, target)
@@ -197,25 +195,3 @@ class PixivCrawler(SeleniumCrawler):
             else:
                 logger.error(e)
                 # do something...
-
-
-if __name__ == "__main__":
-    import argparse
-    import json
-    from dury.config import get_default_config
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config-file", required=True)
-    parser.add_argument("--mode", choices=["author", "keyword"], required=True)
-    parser.add_argument("--target", type=str, required=True)
-    args = parser.parse_args()
-
-    cfg = get_default_config()
-    cfg.merge_from_file(args.config_file)
-    cfg.freeze()
-
-    crawler = PixivCrawler(cfg)
-
-    crawler.run(args.target, args.mode, cfg.OUTPUT_DIR)
-
-    logger.info("Done")
