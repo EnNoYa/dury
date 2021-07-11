@@ -39,6 +39,23 @@ class TwitchClient():
         users = self._create_request("users", params)["data"]
         return users
 
+    def get_user_follows(
+        self, *,
+        after: Optional[str] = None,
+        first:  Optional[int] = 20,
+        from_id: Optional[str] = None,
+        to_id: Optional[str] = None,
+    ):
+        params = {
+            "from_id": from_id, "to_id": to_id,
+            "first": first, "after": after
+        }
+        res = self._create_request("users/follows", params)
+        total = res["total"]
+        user_follows = res["data"]
+        pagination = res["pagination"]
+        return total, user_follows, pagination
+
     def get_channel_information(self, broadcaster_id: Union[str, List[str]]):
         params = { "broadcaster_id": broadcaster_id }
         channel_information = self._create_request("channels", params)["data"]
@@ -108,7 +125,6 @@ class TwitchClient():
     def get_all_stream_tags(
         self, *,
         after: Optional[str] = None,
-        before: Optional[str] = None,
         first: Optional[int] = 20,
         tag_id: Optional[Union[str, List[str]]] = None
     ):
@@ -123,7 +139,7 @@ class TwitchClient():
         stream_tags = self._create_request("streams/tags", params)["data"]
         return stream_tags
 
-    def get_channel_teams(self, broadcaster_id: str):
+    def get_channel_teams(self, broadcaster_id: Union[str, List[str]]):
         params = { "broadcaster_id": broadcaster_id }
         channel_teams = self._create_request("teams/channel", params)["data"]
         return channel_teams
@@ -133,25 +149,9 @@ class TwitchClient():
         team_name: Optional[str] = None,
         team_id: Optional[str] = None
     ):
-        params = { "team_name": team_name, "team_id": team_id }
+        params = { "name": team_name, "id": team_id }
         teams = self._create_request("teams", params)["data"]
         return teams
-
-    def get_user_follows(
-        self, *,
-        after: Optional[str] = None,
-        first:  Optional[int] = 20,
-        from_id: Optional[str] = None,
-        to_id: Optional[str] = None,
-    ):
-        params = {
-            "from_id": from_id, "to_id": to_id,
-            "first": first, "after": after
-        }
-        res = self._create_request("user/follows", params)
-        user_follows = res["data"]
-        pagination = res["pagination"]
-        return user_follows, pagination
 
     def get_videos(
         self,
