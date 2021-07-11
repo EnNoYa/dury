@@ -32,8 +32,8 @@ class TwitchClient():
 
     def get_users(
         self, *,
-        id: Optional[Union[str, List[str]]] = [],
-        login: Optional[Union[str, List[str]]] = []
+        id: Optional[Union[str, List[str]]] = None,
+        login: Optional[Union[str, List[str]]] = None
     ):
         params = { "id": id, "login": login }
         users = self._create_request("users", params)["data"]
@@ -77,12 +77,7 @@ class TwitchClient():
         before: Optional[str] = None,
         first: Optional[int] = 20
     ):
-        params = { "first": first }
-        if after is not None:
-            params.update({ "after": after })
-        if before is not None:
-            params.update({ "before": before })
-
+        params = { "first": first, "after": after, "before": before }
         res = self._create_request("games/top", params)
         top_games = res["data"]
         pagination = res["pagination"]
@@ -97,38 +92,66 @@ class TwitchClient():
         after: Optional[str] = None,
         before: Optional[str] = None,
         first: Optional[int] = 20,
-        game_id: Optional[Union[str, List[str]]] = [],
-        user_id: Optional[Union[str, List[str]]] = [],
-        user_login: Optional[Union[str, List[str]]] = [],
+        game_id: Optional[Union[str, List[str]]] = None,
+        user_id: Optional[Union[str, List[str]]] = None,
+        user_login: Optional[Union[str, List[str]]] = None,
     ):
-        params = { "game_id": game_id, "user_id": user_id, "user_login": user_login, "first": first }
-        if after is not None:
-            params.update({ "after": after })
-        if before is not None:
-            params.update({ "before": before })
-
+        params = {
+            "game_id": game_id, "user_id": user_id, "user_login": user_login,
+            "first": first, "after": after, "before": before
+        }
         res = self._create_request("streams", params)
         streams = res["data"]
         pagination = res["pagination"]
         return streams, pagination
 
-    def check_broadcaster_subscription(self):
-        pass
+    def get_all_stream_tags(
+        self, *,
+        after: Optional[str] = None,
+        before: Optional[str] = None,
+        first: Optional[int] = 20,
+        tag_id: Optional[Union[str, List[str]]] = None
+    ):
+        params = { "tag_id": tag_id, "first": first, "after": after }
+        res = self._create_request("tags/streams", params)
+        stream_tags = res["data"]
+        pagination = res["pagination"]
+        return stream_tags, pagination
 
-    def check_user_subscription(self):
-        pass
+    def get_stream_tags(self, broadcaster_id: str):
+        params = { "broadcaster_id": broadcaster_id }
+        stream_tags = self._create_request("streams/tags", params)["data"]
+        return stream_tags
 
-    def get_all_stream_tags(self):
-        pass
+    def get_channel_teams(self, broadcaster_id: str):
+        params = { "broadcaster_id": broadcaster_id }
+        channel_teams = self._create_request("teams/channel", params)["data"]
+        return channel_teams
 
-    def get_stream_tags(self):
-        pass
+    def get_teams(
+        self, *,
+        team_name: Optional[str] = None,
+        team_id: Optional[str] = None
+    ):
+        params = { "team_name": team_name, "team_id": team_id }
+        teams = self._create_request("teams", params)["data"]
+        return teams
 
-    def get_teams(self):
-        pass
-
-    def get_user_follows(self):
-        pass
+    def get_user_follows(
+        self, *,
+        after: Optional[str] = None,
+        first:  Optional[int] = 20,
+        from_id: Optional[str] = None,
+        to_id: Optional[str] = None,
+    ):
+        params = {
+            "from_id": from_id, "to_id": to_id,
+            "first": first, "after": after
+        }
+        res = self._create_request("user/follows", params)
+        user_follows = res["data"]
+        pagination = res["pagination"]
+        return user_follows, pagination
 
     def get_videos(
         self,
