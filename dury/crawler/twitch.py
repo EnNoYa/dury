@@ -224,9 +224,3 @@ class TwitchClient():
             headers=self.headers
         )
         return res.json()
-
-
-class TwitchCrawler():
-
-    def __init__(self, cfg) -> None:
-        pass

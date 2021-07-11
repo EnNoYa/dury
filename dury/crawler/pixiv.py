@@ -1,3 +1,4 @@
+from typing import Optional
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -19,15 +20,22 @@ class PixivCrawler(SeleniumCrawler):
     }
     VALID_MODE_LIST = ["keyword", "author"]
 
-    def __init__(self, cfg: CfgNode) -> None:
-        super(PixivCrawler, self).__init__(cfg)
+    def __init__(
+        self,
+        username: str,
+        password: str, *,
+        retry: Optional[int] = 5,
+        limit: Optional[int] = 100,
+        **kwargs
+    ) -> None:
+        super(PixivCrawler, self).__init__(**kwargs)
 
-        self.retry = cfg.PIXIV.RETRY
-        self.limit = cfg.PIXIV.LIMIT
+        self.retry = retry
+        self.limit = limit
 
         status = self.load_cookies(self.PIXIV_URL)
         if status < 0:
-            self.login(cfg.PIXIV.USERNAME, cfg.PIXIV.PASSWORD)
+            self.login(username, password)
 
     def login(self, username: str, password: str):
         self.driver.get(self.LOGIN_URL)
@@ -164,8 +172,7 @@ class PixivCrawler(SeleniumCrawler):
             logger.info(f"Move to {url}")
             self.driver.get(url)
             
-            figure = self.explicitly_wait(5, EC.presence_of_element_located((By.TAG_NAME, "figure")))
-            self.delay()
+            figure = self.explicitly_wait(5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
             image_elements = figure.find_elements(By.TAG_NAME, "img")
             
             for image_element in image_elements:
