@@ -1,23 +1,36 @@
+import json
+import time
+import os
+from typing import Optional, Any
+
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-import json
-import time
-import os
-
 
 class SeleniumCrawler:
-    def __init__(self, cfg) -> None:
-        self.cookie_file = cfg.SELENIUM.COOKIE_FILE
-        self.safe_delay = cfg.SELENIUM.SAFE_DELAY
+    def __init__(
+        self, *,
+        driver_path: Optional[str] = "./chromedriver",
+        headless: Optional[bool] = False,
+        implicitly_wait: Optional[float] = 10.0,
+        cookie_file: Optional[str] = "cookies.json",
+        safe_delay: Optional[float] = 1.0,
+    ) -> None:
+        self.cookie_file = cookie_file
+        self.safe_delay = safe_delay
         self.driver = self.launch(
-            cfg.SELENIUM.CHROMEDRIVER_PATH,
-            cfg.SELENIUM.HEADLESS,
-            cfg.SELENIUM.IMPLICITLY_WAIT
+            driver_path,
+            headless=headless,
+            implicitly_wait=implicitly_wait
         )
 
-    def launch(self, driver_path, headless=False, implicitly_wait=10) -> webdriver:
+    def launch(
+        self,
+        driver_path: str, *,
+        headless: Optional[bool] = False,
+        implicitly_wait: Optional[float] = 10.0
+    ) -> webdriver.Chrome:
         options = webdriver.ChromeOptions()
         if headless:
             options.add_argument("--headless")
@@ -31,7 +44,7 @@ class SeleniumCrawler:
     def delay(self) -> None:
         time.sleep(self.safe_delay)
 
-    def explicitly_wait(self, timeout, condition):
+    def explicitly_wait(self, timeout: float, condition: Any):
         return WebDriverWait(self.driver, timeout).until(condition)
 
     def save_cookies(self):
@@ -39,7 +52,7 @@ class SeleniumCrawler:
         with open(self.cookie_file, "w") as f:
             json.dump(cookies, f, indent=4)
 
-    def load_cookies(self, domain):
+    def load_cookies(self, domain: str):
         self.driver.get(domain)
 
         if not os.path.exists(self.cookie_file):

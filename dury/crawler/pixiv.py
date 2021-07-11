@@ -1,13 +1,13 @@
+from typing import Optional
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from loguru import logger
-from tqdm import tqdm
 import os
 
 from yacs.config import CfgNode
 
-from dury.utils import download_image
+from dury.utils import download
 from dury.crawler.base import SeleniumCrawler
 
 
@@ -20,15 +20,22 @@ class PixivCrawler(SeleniumCrawler):
     }
     VALID_MODE_LIST = ["keyword", "author"]
 
-    def __init__(self, cfg: CfgNode) -> None:
-        super(PixivCrawler, self).__init__(cfg)
+    def __init__(
+        self,
+        username: str,
+        password: str, *,
+        retry: Optional[int] = 5,
+        limit: Optional[int] = 100,
+        **kwargs
+    ) -> None:
+        super(PixivCrawler, self).__init__(**kwargs)
 
-        self.retry = cfg.PIXIV.RETRY
-        self.limit = cfg.PIXIV.LIMIT
+        self.retry = retry
+        self.limit = limit
 
         status = self.load_cookies(self.PIXIV_URL)
         if status < 0:
-            self.login(cfg.PIXIV.USERNAME, cfg.PIXIV.PASSWORD)
+            self.login(username, password)
 
     def login(self, username: str, password: str):
         self.driver.get(self.LOGIN_URL)
@@ -44,14 +51,13 @@ class PixivCrawler(SeleniumCrawler):
 
         try:
             element = WebDriverWait(self.driver, 60).until(EC.presence_of_element_located((By.ID, "root")))
+            self.save_cookies()
         except Exception as e:
             if not os.path.exists("tmp"):
                 os.makedirs("tmp", exist_ok=True)
             self.driver.save_screenshot("./temp/login_err.png")
             self.driver.quit()
             raise IOError("login sim wait failed, 'root' did not appear")
-        
-        self.save_cookies()
 
     def setup(self, target: str, mode: str, root_dir: str):
         output_dir = os.path.join(root_dir, mode, target)
@@ -166,8 +172,7 @@ class PixivCrawler(SeleniumCrawler):
             logger.info(f"Move to {url}")
             self.driver.get(url)
             
-            figure = self.explicitly_wait(5, EC.presence_of_element_located((By.TAG_NAME, "figure")))
-            self.delay()
+            figure = self.explicitly_wait(5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
             image_elements = figure.find_elements(By.TAG_NAME, "img")
             
             for image_element in image_elements:
@@ -179,7 +184,7 @@ class PixivCrawler(SeleniumCrawler):
                     continue
                 
                 logger.info(f"Download {image_url}")
-                status = download_image(image_url, out_path, self.REQUEST_HEADERS)
+                status = download(image_url, out_path, self.REQUEST_HEADERS)
                 if status < 0:
                     raise IOError(f"Failed to download {url}")
 
@@ -197,25 +202,3 @@ class PixivCrawler(SeleniumCrawler):
             else:
                 logger.error(e)
                 # do something...
-
-
-if __name__ == "__main__":
-    import argparse
-    import json
-    from dury.config import get_default_config
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config-file", required=True)
-    parser.add_argument("--mode", choices=["author", "keyword"], required=True)
-    parser.add_argument("--target", type=str, required=True)
-    args = parser.parse_args()
-
-    cfg = get_default_config()
-    cfg.merge_from_file(args.config_file)
-    cfg.freeze()
-
-    crawler = PixivCrawler(cfg)
-
-    crawler.run(args.target, args.mode, cfg.OUTPUT_DIR)
-
-    logger.info("Done")
