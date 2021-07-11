@@ -89,7 +89,8 @@ class TwitchClient():
         params = { "id": game_id }
         return self._create_request("games", params)
 
-    def get_streams(self, *,
+    def get_streams(
+        self, *,
         after: Optional[str] = None,
         before: Optional[str] = None,
         first: Optional[int] = 20,

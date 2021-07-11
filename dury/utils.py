@@ -2,8 +2,10 @@ import time
 import os
 import shutil
 import requests
-from multiprocessing.pool import ThreadPool
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
+
+from tqdm import tqdm
 
 
 def download(
@@ -17,9 +19,9 @@ def download(
             return IOError("Failed request")
         with open(out_path, "wb") as f:
             f.write(res.content)
-        return 0
+        return None
     except Exception as e:
-        return -1
+        return url
 
 
 def distributed_download(
@@ -27,23 +29,23 @@ def distributed_download(
     out_path: str, *,
     headers: Optional[Dict[str, str]] = None,
     timeout: Optional[int] = None,
-    num_thread: Optional[int] = 5
+    num_workers: Optional[int] = 10
 ) -> int:
-    try:
-        timestamp = int(time.time())
-        tmp_dir = os.path.join("/tmp", "dury", str(timestamp))
-        os.makedirs(tmp_dir, exist_ok=True)
-        urls = [ (str(i), url) for i, url in enumerate(urls) ]
-        
-        task = lambda x: download(
-            x[1],
-            os.path.join(tmp_dir, f"{x[0].zfill(8)}.ts"),
-            headers=headers,
-            timeout=timeout
-        )
-        thread_pool = ThreadPool(num_thread)
-        thread_pool.map(task, urls)
+    timestamp = int(time.time())
+    tmp_dir = os.path.join("/tmp", "dury", str(timestamp))
+    os.makedirs(tmp_dir, exist_ok=True)
+    urls = [ (str(i), url) for i, url in enumerate(urls) ]
+    
+    task = lambda x: download(
+        x[1],
+        os.path.join(tmp_dir, f"{x[0].zfill(8)}.ts"),
+        headers=headers,
+        timeout=timeout
+    )
 
+    try:
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            results = list(tqdm(executor.map(task, urls), total=len(urls)))
         merge_chunks(tmp_dir, out_path)
         return 0
     except Exception as e:
