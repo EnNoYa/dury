@@ -2,8 +2,8 @@ import time
 import os
 import shutil
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Optional
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Optional, Union
 
 from tqdm import tqdm
 
@@ -11,17 +11,18 @@ from tqdm import tqdm
 def download(
     url: str, out_path: str,
     headers: Optional[Dict[str, str]] = None,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    retry: Optional[int] = 5,
 ):
-    try:
-        res = requests.get(url, headers=headers, timeout=timeout)
-        if res.status_code != 200:
-            return IOError("Failed request")
+    res = requests.get(url, headers=headers, timeout=timeout)
+    if res.status_code == 200:
         with open(out_path, "wb") as f:
             f.write(res.content)
-        return None
-    except Exception as e:
-        return url
+        return 0
+    elif retry > 0:
+        return download(url, out_path, headers, timeout, retry - 1)
+    else:
+        return IOError(f"Failed to download {url}")
 
 
 def distributed_download(
@@ -29,7 +30,8 @@ def distributed_download(
     out_path: str, *,
     headers: Optional[Dict[str, str]] = None,
     timeout: Optional[int] = None,
-    num_workers: Optional[int] = 10
+    num_workers: Optional[int] = 10,
+    retry: Optional[int] = 5
 ) -> int:
     timestamp = int(time.time())
     tmp_dir = os.path.join("/tmp", "dury", str(timestamp))
@@ -40,7 +42,8 @@ def distributed_download(
         x[1],
         os.path.join(tmp_dir, f"{x[0].zfill(8)}.ts"),
         headers=headers,
-        timeout=timeout
+        timeout=timeout,
+        retry=retry
     )
 
     try:
