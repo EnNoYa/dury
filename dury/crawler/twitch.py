@@ -30,42 +30,87 @@ class TwitchClient():
         oauth = res.json()
         return f"{oauth['token_type'].capitalize()} {oauth['access_token']}"
 
-    def get_users(self, login_names: Union[str, List[str]]):
-        if isinstance(login_names, str):
-            login_names = [ login_names ]
-
-        query = f"{'&'.join(f'login={login_name}' for login_name in login_names)}" 
-        users = self._create_request("users", query)["data"]
+    def get_users(
+        self, *,
+        id: Optional[Union[str, List[str]]] = [],
+        login: Optional[Union[str, List[str]]] = []
+    ):
+        params = { "id": id, "login": login }
+        users = self._create_request("users", params)["data"]
         return users
 
-    def get_channel_information(self, broadcaster_ids: Union[str, List[str]]):
-        query = f"{'&'.join(f'broadcaster_id={broadcaster_id}' for broadcaster_id in broadcaster_ids)}" 
-        channel_information = self._create_request("channels", query)["data"]
+    def get_channel_information(self, broadcaster_id: Union[str, List[str]]):
+        params = { "broadcaster_id": broadcaster_id }
+        channel_information = self._create_request("channels", params)["data"]
         return channel_information
 
-    def get_channel_emotes(self):
-        pass
+    def get_channel_emotes(self, broadcaster_id: str):
+        params = { "broadcaster_id": broadcaster_id }
+        channel_emotes = self._create_request("chat/emotes", params)["data"]
+        return channel_emotes
 
-    def get_channel_chat_badges(self):
-        pass
+    def get_channel_chat_badges(self, broadcaster_id: str):
+        params = { "broadcaster_id": broadcaster_id }
+        channel_emotes = self._create_request("chat/badges", params)["data"]
+        return channel_emotes
 
-    def get_clips(self):
-        pass
+    def get_clips(
+        self,
+        broadcaster_id: str, *,
+        after: Optional[str] = None,
+        before: Optional[str] = None,
+        first: Optional[int] = 20
+    ):
+        params = { "broadcaster_id": broadcaster_id, "first": first }
+        if after is not None:
+            params.update({ "after": after })
+        if before is not None:
+            params.update({ "before": before })
+
+        res = self._create_request("clips", params)
+        clips = res["data"]
+        pagination = res["pagination"]
+        return clips, pagination
     
-    def get_top_games(self):
-        pass
+    def get_top_games(self, *,
+        after: Optional[str] = None,
+        before: Optional[str] = None,
+        first: Optional[int] = 20
+    ):
+        params = { "first": first }
+        if after is not None:
+            params.update({ "after": after })
+        if before is not None:
+            params.update({ "before": before })
 
-    def get_games(self):
-        pass
+        res = self._create_request("games/top", params)
+        top_games = res["data"]
+        pagination = res["pagination"]
+        return top_games, pagination
 
-    def search_categories(self):
-        pass
+    def get_games(self, game_id: Union[str, List[str]]):
+        params = { "id": game_id }
+        games = self._create_request("games", params)["data"]
+        return games
 
-    def search_channels(self):
-        pass
+    def get_streams(self, *,
+        after: Optional[str] = None,
+        before: Optional[str] = None,
+        first: Optional[int] = 20,
+        game_id: Optional[Union[str, List[str]]] = [],
+        user_id: Optional[Union[str, List[str]]] = [],
+        user_login: Optional[Union[str, List[str]]] = [],
+    ):
+        params = { "game_id": game_id, "user_id": user_id, "user_login": user_login, "first": first }
+        if after is not None:
+            params.update({ "after": after })
+        if before is not None:
+            params.update({ "before": before })
 
-    def get_streams(self):
-        pass
+        res = self._create_request("streams", params)
+        streams = res["data"]
+        pagination = res["pagination"]
+        return streams, pagination
 
     def check_broadcaster_subscription(self):
         pass
@@ -82,9 +127,6 @@ class TwitchClient():
     def get_teams(self):
         pass
 
-    def get_users(self):
-        pass
-
     def get_user_follows(self):
         pass
 
@@ -95,13 +137,13 @@ class TwitchClient():
         before: Optional[str] = None,
         first: Optional[int] = 20
     ):
-        query = f"user_id={user_id}&first={first}"
+        params = { "user_id": user_id, "first": first }
         if after is not None:
-            query += "&after={after}"
+            params.update({ "after": after })
         if before is not None:
-            query += "&before={before}"
+            params.update({ "before": before })
 
-        res = self._create_request("videos", query)
+        res = self._create_request("videos", params)
         videos = res["data"]
         pagination = res["pagination"]
         return videos, pagination
@@ -181,9 +223,10 @@ class TwitchClient():
         chunk_uris = [ f"{base_url}/{chunk}" for chunk in chunk_list ]
         return chunk_uris
 
-    def _create_request(self, path: str, query: str):
+    def _create_request(self, path: str, params: Dict[str, Any]):
         res = requests.get(
-            f"{self.PUBLIC_API_URL}/{path}?{query}",
+            f"{self.PUBLIC_API_URL}/{path}",
+            params=params,
             headers=self.headers
         )
         return res.json()
