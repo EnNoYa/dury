@@ -5,8 +5,6 @@ from selenium.webdriver.common.by import By
 from loguru import logger
 import os
 
-from yacs.config import CfgNode
-
 from dury.utils import download
 from dury.crawler.base import SeleniumCrawler
 
