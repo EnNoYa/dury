@@ -172,3 +172,58 @@ class YouTubeClient(APIWrapper):
         }
         res = self._get("videos", params=params)
         return res
+
+
+    def search(
+        self, *,
+        related_to_video_id: Optional[str] = None,
+        channel_id: Optional[str] = None,
+        channel_type: Optional[str] = None, # any, show
+        event_type: Optional[str] = None, # completed, live, upcoming
+        max_results: Optional[int] = 5,
+        page_token: Optional[str] = None,
+        order: Optional[str] = "relevance", # date, rating, relevance, title, videoCount, viewCount
+        published_after: Optional[str] = None,
+        published_before: Optional[str] = None,
+        q: Optional[str] = None,
+        region_code: Optional[str] = None,
+        safe_search: Optional[str] = "none", # moderate, none, strict
+        topic_id: Optional[str] = None,
+        type: Optional[str] = None, # channel, playlist, video
+        video_caption: Optional[str] = "any", # any, closedCaption, none
+        video_definition: Optional[str] = "any", # any, high, standard
+        video_category_id: Optional[str] = None,
+        video_dimension: Optional[str] = "any", # 2d, 3d, any
+        video_duration: Optional[str] = "any", # any, long, medium, short
+        video_embeddable: Optional[str] = "any", # any, true
+        video_license: Optional[str] = "any", # any, creativeCommon, youtube
+        video_syndicated: Optional[str] = "any", # any, true
+        video_type: Optional[str] = "any" # any, episode, movie
+    ):
+        params = {
+            "relatedToVideoId": related_to_video_id,
+            "channelId": channel_id,
+            "channelType": channel_type,
+            "eventType": event_type,
+            "maxResults": max_results,
+            "pageToken": page_token,
+            "order": order,
+            "publishedAfter": published_after,
+            "publishedBefore": published_before,
+            "q": q,
+            "regionCode": region_code,
+            "safeSearch": safe_search,
+            "topicId": topic_id,
+            "type": type,
+            "videoCaption": video_caption,
+            "videoCategoryId": video_category_id,
+            "videoDefinition": video_definition,
+            "videoDimension": video_dimension,
+            "videoDuration": video_duration,
+            "videoEmbeddable": video_embeddable,
+            "videoLicense": video_license,
+            "videoSyndicated": video_syndicated,
+            "videoType": video_type
+        }
+        res = self._get("search", params=params)
+        return res
