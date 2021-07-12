@@ -45,7 +45,7 @@ class YouTubeClient(APIWrapper):
     ):
         params = {
             "key": self.api_key,
-            "part": "id, snippet, brandingSettings, contentDetails, invideoPromotion, statistics, topicDetails",
+            "part": "id, snippet, contentDetails, statistics",
             "categoryId": category_id,
             "forUsername": for_username,
             "id": id,
@@ -162,7 +162,7 @@ class YouTubeClient(APIWrapper):
     ):
         params = {
             "key": self.api_key,
-            "part": "id, snippet, contentDetails, fileDetails, liveStreamingDetails, player, processingDetails, recordingDetails, statistics, status, suggestions, topicDetails",
+            "part": "id, snippet, contentDetails, liveStreamingDetails, player, recordingDetails, statistics, status, topicDetails",
             "chart": chart,
             "id": id,
             "maxResults": max_results,
@@ -201,6 +201,7 @@ class YouTubeClient(APIWrapper):
         video_type: Optional[str] = "any" # any, episode, movie
     ):
         params = {
+            "key": self.api_key,
             "relatedToVideoId": related_to_video_id,
             "channelId": channel_id,
             "channelType": channel_type,
