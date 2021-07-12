@@ -3,28 +3,33 @@ import re
 import os
 from typing import List, Optional, Union, Dict, Any
 
+from .base import APIWrapper
 from dury.utils import distributed_download
 
 
-class TwitchClient():
+class TwitchClient(APIWrapper):
     PUBLIC_API_URL = "https://api.twitch.tv/helix"
     OAUTH_URL = "https://id.twitch.tv/oauth2/token"
     PLAYLISTS_URL = "https://usher.ttvnw.net/vod/{}"
     PRIVATE_API_URL = "https://gql.twitch.tv/gql"
 
     def __init__(self, client_id: str, client_secret: str) -> None:
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.oauth = self.get_oauth()
-        self.headers = {
-            "Client-Id": self.client_id,
-            "Authorization": self.oauth
-        }
+        self.__client_id = client_id
+        self.__client_secret = client_secret
+        self.__oauth = self.get_oauth(self.__client_id, self.__client_secret)
 
-    def get_oauth(self):
+        super(TwitchClient, self).__init__(
+            self.PUBLIC_API_URL,
+            headers={
+                "Client-Id": self.__client_id,
+                "Authorization": self.__oauth
+            }
+        )
+
+    def get_oauth(self, client_id: str, client_secret: str):
         res = requests.post(self.OAUTH_URL, params={
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "grant_type": "client_credentials"
         })
         oauth = res.json()
@@ -36,7 +41,7 @@ class TwitchClient():
         login: Optional[Union[str, List[str]]] = None
     ):
         params = { "id": id, "login": login }
-        return self._create_request("users", params)
+        return self._get("users", params=params)
 
     def get_user_follows(
         self, *,
@@ -49,19 +54,19 @@ class TwitchClient():
             "from_id": from_id, "to_id": to_id,
             "first": first, "after": after
         }
-        return self._create_request("users/follows", params)
+        return self._get("users/follows", params=params)
 
     def get_channel_information(self, broadcaster_id: Union[str, List[str]]):
         params = { "broadcaster_id": broadcaster_id }
-        return self._create_request("channels", params)
+        return self._get("channels", params=params)
 
     def get_channel_emotes(self, broadcaster_id: str):
         params = { "broadcaster_id": broadcaster_id }
-        return self._create_request("chat/emotes", params)
+        return self._get("chat/emotes", params=params)
 
     def get_channel_chat_badges(self, broadcaster_id: str):
         params = { "broadcaster_id": broadcaster_id }
-        return self._create_request("chat/badges", params)
+        return self._get("chat/badges", params=params)
 
     def get_clips(
         self,
@@ -74,7 +79,7 @@ class TwitchClient():
             "broadcaster_id": broadcaster_id, "first": first,
             "after": after, "before": before
         }
-        return self._create_request("clips", params)
+        return self._get("clips", params=params)
     
     def get_top_games(self, *,
         after: Optional[str] = None,
@@ -82,12 +87,12 @@ class TwitchClient():
         first: Optional[int] = 20
     ):
         params = { "first": first, "after": after, "before": before }
-        return self._create_request("games/top", params)
+        return self._get("games/top", params=params)
 
 
     def get_games(self, game_id: Union[str, List[str]]):
         params = { "id": game_id }
-        return self._create_request("games", params)
+        return self._get("games", params=params)
 
     def get_streams(
         self, *,
@@ -103,7 +108,7 @@ class TwitchClient():
             "user_login": user_login, "first": first,
             "after": after, "before": before
         }
-        return self._create_request("streams", params)
+        return self._get("streams", params=params)
 
     def get_all_stream_tags(
         self, *,
@@ -112,15 +117,15 @@ class TwitchClient():
         tag_id: Optional[Union[str, List[str]]] = None
     ):
         params = { "tag_id": tag_id, "first": first, "after": after }
-        return self._create_request("tags/streams", params)
+        return self._get("tags/streams", params=params)
 
     def get_stream_tags(self, broadcaster_id: str):
         params = { "broadcaster_id": broadcaster_id }
-        return self._create_request("streams/tags", params)
+        return self._get("streams/tags", params=params)
 
     def get_channel_teams(self, broadcaster_id: Union[str, List[str]]):
         params = { "broadcaster_id": broadcaster_id }
-        return self._create_request("teams/channel", params)
+        return self._get("teams/channel", params=params)
 
     def get_teams(
         self, *,
@@ -128,7 +133,7 @@ class TwitchClient():
         team_id: Optional[str] = None
     ):
         params = { "name": team_name, "id": team_id }
-        return self._create_request("teams", params)
+        return self._get("teams", params=params)
 
     def get_videos(
         self,
@@ -141,7 +146,7 @@ class TwitchClient():
             "user_id": user_id, "first": first,
             "after": after, "before": before
         }
-        return self._create_request("videos", params)
+        return self._get("videos", params=params)
 
     def download_video(
         self,
@@ -216,11 +221,3 @@ class TwitchClient():
         base_url = os.path.dirname(video_uri)
         chunk_uris = [ f"{base_url}/{chunk}" for chunk in chunk_list ]
         return chunk_uris
-
-    def _create_request(self, path: str, params: Dict[str, Any]):
-        res = requests.get(
-            f"{self.PUBLIC_API_URL}/{path}",
-            params=params,
-            headers=self.headers
-        )
-        return res.json()
