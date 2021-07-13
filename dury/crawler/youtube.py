@@ -1,5 +1,7 @@
 from typing import Optional
 
+from pytube import YouTube, streams
+
 from .base import APIWrapper
 
 
@@ -228,3 +230,25 @@ class YouTubeClient(APIWrapper):
         }
         res = self._get("search", params=params)
         return res
+
+    def download(
+        self,
+        video_url: str,
+        output_dir: str, *,
+        filename: Optional[str] = None,
+        prefix: Optional[str] = None,
+        option: Optional[str] = "lowest"
+    ) -> str:
+        streams = YouTube(video_url).streams
+        if option == "audio_only":
+            stream = streams.get_audio_only()
+        elif option in ("1080p", "720p", "480p", "360p", "240p", "144p" ):
+            stream = streams.get_by_resolution(option)
+        elif option == "highest":
+            stream = streams.get_highest_resolution()
+        elif option == "lowest":
+            stream = streams.get_lowest_resolution()
+        else:
+            raise NotImplementedError
+
+        return stream.download(output_dir, filename=filename, filename_prefix=prefix)

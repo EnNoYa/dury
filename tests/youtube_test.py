@@ -23,9 +23,9 @@ if __name__ == "__main__":
     sample_category_id = categories["items"][0]["id"]
     activities = client.get_activities(sample_channel_id)
     channels = client.get_channels(for_username="재윤TV")
+    channel = client.get_channels(id=sample_channel_id)
     videos = client.get_videos(id=f"{sample_video_id_0}, {sample_video_id_1}")
 
-    # guide_categories = client.get_guide_categories(region_code="kr") # not working
     playlists = client.get_playlists(channel_id=sample_channel_id)
     comment_threads_0 = client.get_comment_threads(video_id=sample_video_id_0)
     comment_threads_1 = client.get_comment_threads(channel_id=sample_channel_id)
@@ -35,4 +35,10 @@ if __name__ == "__main__":
     
     comments_0 = client.get_comments(parent_id=sample_comment_id_0)
     comments_1 = client.get_comments(id=sample_comment_id_0)
+    
+    # guide_categories = client.get_guide_categories(region_code="kr") # not working
+
+    username = channel["items"][0]["snippet"]["title"]
+    video_url = f"https://www.youtube.com/watch?v={sample_video_id_0}"
+    path = client.download(video_url, "video", filename="youtube_sample", prefix=username)
     print("Done")
