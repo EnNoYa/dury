@@ -6,14 +6,16 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from loguru import logger
+from tqdm import tqdm
 
 from dury.utils import download
 from dury.crawler.base import SeleniumCrawler
 
 
 class PixivMode(Enum):
-    USER = 0
-    TAG = 1
+    USERNAME = 0
+    USER_ID = 1
+    TAG = 2
 
 
 class PixivCrawler(SeleniumCrawler):
@@ -46,8 +48,10 @@ class PixivCrawler(SeleniumCrawler):
         try:
             logger.info(f"Crawling target - {target}")
 
-            if PixivMode(mode) is PixivMode.USER:
+            if PixivMode(mode) is PixivMode.USERNAME:
                 self.run_on_user(target)
+            elif PixivMode(mode) is PixivMode.USER_ID:
+                self.run_on_id(target)
             elif PixivMode(mode) is PixivMode.TAG:
                 self.run_on_keyword(target)
             else:
@@ -60,10 +64,9 @@ class PixivCrawler(SeleniumCrawler):
     def run_on_keyword(
         self,
         keyword: str, *,
-        output_dir: Optional[str] = "output",
         safe_mode: Optional[bool] = True
     ):
-        self._setup("keyword", keyword)
+        output_dir = self._setup("keyword", keyword)
         url = f"{self.PIXIV_URL}/tags/{keyword}/illustrations"
         if safe_mode:
             url += "?mode=safe"
@@ -83,16 +86,28 @@ class PixivCrawler(SeleniumCrawler):
             self._delay()
 
         logger.info("Start to download artworks")
-        for artwork_url in artwork_urls[:self.limit]:
+        for artwork_url in tqdm(artwork_urls[:self.limit]):
             self.download_artworks(
                 artwork_url, output_dir,
                 recursive=False,
                 retry=self.retry
             )
 
-    def run_on_user(self, user: str, output_dir: str = "output"):
-        self._setup("user", user)
-        self.driver.get(f"{self.PIXIV_URL}/search_user.php?nick={user}")
+    def run_on_id(self, user_id: str):
+        output_dir = self._setup("user_id", user_id)
+        self.driver.get(f"{self.PIXIV_URL}/users/{user_id}/illustrations")
+        
+        # Visit each artworks page recursively
+        image_cards = self._find_cards()
+        latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
+
+        logger.info("Start to download artworks")
+        self.download_artworks(latest_illust_url, output_dir, recursive=True, limit=self.limit, retry=self.retry)
+
+
+    def run_on_user(self, username: str):
+        output_dir = self._setup("username", username)
+        self.driver.get(f"{self.PIXIV_URL}/search_user.php?nick={username}&s_mode=s_usr")
 
         # Go to top user page
         target = self.driver.find_elements(By.CLASS_NAME, "user-recommendation-item")[0]
@@ -126,7 +141,7 @@ class PixivCrawler(SeleniumCrawler):
             logger.info(f"Move to {url}")
             self.driver.get(url)
             
-            figure = self.explicitly_wait(5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
+            figure = self._explicitly_wait(5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
             image_elements = figure.find_elements(By.TAG_NAME, "img")
             
             for image_element in image_elements:
