@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pytube import YouTube, streams
+from pytube import YouTube
 
 from .base import APIWrapper
 
@@ -12,8 +12,8 @@ class YouTubeClient(APIWrapper):
         self,
         api_key: str
     ) -> None:
-        self.api_key = api_key
         super(YouTubeClient, self).__init__(self.PUBLIC_API_URL)
+        self.api_key = api_key
 
     def get_activities(
         self,
