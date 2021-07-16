@@ -1,4 +1,4 @@
-from dury.crawler.twitch import TwitchClient
+from dury.api.twitch import TwitchClient
 
 
 if __name__ == "__main__":

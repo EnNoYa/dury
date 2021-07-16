@@ -1,8 +1,7 @@
 import json
 import time
 import os
-import requests
-from typing import Optional, Any, Dict
+from typing import Optional, Any
 
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
@@ -64,34 +63,3 @@ class SeleniumCrawler:
         for cookie in cookies:
             self.driver.add_cookie(cookie)
         return 0
-
-
-class APIWrapper:
-    def __init__(
-        self,
-        base_url: str, *,
-        headers: Optional[Dict[str, Any]] = None
-    ) -> None:
-        self._base_url = base_url
-        self._headers = headers
-
-    def _get(
-        self,
-        path: str, *,
-        params: Optional[Dict[str, Any]] = None
-    ):
-        res = requests.get(
-            f"{self._base_url}/{path}",
-            params=params,
-            headers=self._headers
-        )
-        return res.json()
-
-    def _post(self):
-        ...
-
-    def _put(self):
-        ...
-    
-    def _delete(self):
-        ...
