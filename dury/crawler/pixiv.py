@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass, field
 import copy
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, List
 
 from selenium.webdriver import Chrome
@@ -161,20 +162,26 @@ class PixivCrawler(SeleniumCrawler):
             figure = self._explicitly_wait(driver, 5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
             body = driver.find_element(By.TAG_NAME, "figcaption")
             
-            title_element = body.find_element(By.TAG_NAME, "h1")
-            title = title_element.text
+            try:
+                title_element = body.find_element(By.TAG_NAME, "h1")
+                title = title_element.text
+            except Exception as e:
+                logger.error(e)
+                title = ""
 
             try:
                 desc_element = body.find_element(By.TAG_NAME, "p")
                 desc = desc_element.text
-            except: # if empty description
+            except Exception as e:
+                logger.error(e)
                 desc = ""
 
             try:
                 tag_body = body.find_element(By.TAG_NAME, "footer")
                 tag_elements = tag_body.find_elements(By.TAG_NAME, "a")
                 tags = [ tag_element.text for tag_element in tag_elements]
-            except:
+            except Exception as e:
+                logger.error(e)
                 tags = []
 
             image_elements = figure.find_elements(By.TAG_NAME, "img")
@@ -185,6 +192,29 @@ class PixivCrawler(SeleniumCrawler):
                 return self.get_artwork(driver, artwork_url, retry=retry - 1)
             else:
                 return Artwork(artwork_url)
+
+    def download_artworks(
+        self,
+        artworks: List[Artwork], *,
+        output_dir: Optional[str] = "output/pixiv",
+        num_workers: Optional[int] = 10,
+    ):
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        image_urls = []
+        for artwork in artworks:
+            image_urls += artwork.image_urls
+
+        task = lambda x: download(
+            x,
+            os.path.join(output_dir, x.split("/")[-1]),
+            headers=self.REQUEST_HEADERS
+        )
+        
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            results = list(tqdm(executor.map(task, image_urls), total=len(image_urls)))
+        return results
 
     def _launch(self) -> Chrome:
         driver = super()._launch()
