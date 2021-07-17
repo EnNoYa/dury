@@ -15,11 +15,9 @@ class SeleniumCrawler:
         driver_path: Optional[str] = "./chromedriver",
         headless: Optional[bool] = False,
         implicitly_wait: Optional[float] = 10.0,
-        cookie_file: Optional[str] = "cookies.json",
         safe_delay: Optional[float] = 1.0,
     ) -> None:
         self.output_dir = output_dir
-        self.cookie_file = cookie_file
         self.safe_delay = safe_delay
         self.driver_path = driver_path
         self.headless = headless
@@ -36,24 +34,27 @@ class SeleniumCrawler:
         driver.implicitly_wait(self.implicitly_wait)
         return driver
 
-    def _delay(self) -> None:
-        time.sleep(self.safe_delay)
+    def _delay(self, seconds: Optional[float] = None) -> None:
+        if seconds is not None:
+            time.sleep(seconds)
+        else:
+            time.sleep(self.safe_delay)
 
     def _explicitly_wait(self, driver: Chrome, timeout: float, condition: Any) -> WebDriverWait:
         return WebDriverWait(driver, timeout).until(condition)
 
-    def _save_cookies(self, driver: Chrome) -> None:
+    def _save_cookies(self, driver: Chrome, output_path: str) -> None:
         cookies = driver.get_cookies()
-        with open(self.cookie_file, "w") as f:
+        with open(output_path, "w") as f:
             json.dump(cookies, f, indent=4)
 
-    def _load_cookies(self, driver: Chrome, domain: str) -> int:
+    def _load_cookies(self, driver: Chrome, cookie_file: str, domain: str) -> int:
         driver.get(domain)
 
-        if not os.path.exists(self.cookie_file):
+        if not os.path.exists(cookie_file):
             return -1
 
-        with open(self.cookie_file, "r") as f:
+        with open(cookie_file, "r") as f:
                 cookies = json.load(f)
         for cookie in cookies:
             driver.add_cookie(cookie)
