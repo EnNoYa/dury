@@ -12,12 +12,6 @@ from dury.utils import download
 from dury.crawler.base import SeleniumCrawler
 
 
-class PixivMode(Enum):
-    USERNAME = 0
-    USER_ID = 1
-    TAG = 2
-
-
 class PixivCrawler(SeleniumCrawler):
     LOGIN_URL = "https://accounts.pixiv.net/login"
     PIXIV_URL = "https://www.pixiv.net"
@@ -27,55 +21,30 @@ class PixivCrawler(SeleniumCrawler):
     }
     VALID_MODE_LIST = ["keyword", "author"]
 
-    def __init__(
-        self,
-        username: str,
-        password: str, *,
-        retry: Optional[int] = 5,
-        limit: Optional[int] = 100,
-        **kwargs
-    ) -> None:
-        super(PixivCrawler, self).__init__(**kwargs)
+    def __init__(self, username: str, password: str, retry: Optional[int] = 5, *args, **kwargs) -> None:
+        super(PixivCrawler, self).__init__(*args, **kwargs)
 
         self.retry = retry
-        self.limit = limit
 
         status = self._load_cookies(self.PIXIV_URL)
         if status < 0:
             self._login(username, password)
 
-    def run(self, target: str, mode: Optional[Union[PixivMode, int]] = 0):
-        try:
-            logger.info(f"Crawling target - {target}")
-
-            if PixivMode(mode) is PixivMode.USERNAME:
-                self.run_on_user(target)
-            elif PixivMode(mode) is PixivMode.USER_ID:
-                self.run_on_id(target)
-            elif PixivMode(mode) is PixivMode.TAG:
-                self.run_on_keyword(target)
-            else:
-                raise NotImplementedError
-        except Exception as e:
-            logger.error(e)
-        finally:
-            self.driver.close()
- 
     def run_on_keyword(
         self,
         keyword: str, *,
-        safe_mode: Optional[bool] = True
+        safe_mode: Optional[bool] = True,
+        limit: Optional[int] = 100
     ):
         output_dir = self._setup("keyword", keyword)
         url = f"{self.PIXIV_URL}/tags/{keyword}/illustrations"
         if safe_mode:
             url += "?mode=safe"
+
         self.driver.get(url)
 
-        # Visit all cards in each page recursively
         artwork_urls = []
-
-        while len(artwork_urls) < self.limit:
+        while len(artwork_urls) < limit:
             next_page = self._get_next_page()
             image_cards = self._find_cards()
             artwork_urls += [
@@ -86,15 +55,20 @@ class PixivCrawler(SeleniumCrawler):
             self._delay()
 
         logger.info("Start to download artworks")
-        for artwork_url in tqdm(artwork_urls[:self.limit]):
+        for artwork_url in tqdm(artwork_urls[:limit]):
             self.download_artworks(
                 artwork_url, output_dir,
                 recursive=False,
                 retry=self.retry
             )
 
-    def run_on_id(self, user_id: str):
+    def run_on_id(
+        self,
+        user_id: str, *,
+        limit: Optional[int] = 100
+    ):
         output_dir = self._setup("user_id", user_id)
+
         self.driver.get(f"{self.PIXIV_URL}/users/{user_id}/illustrations")
         
         # Visit each artworks page recursively
@@ -102,11 +76,15 @@ class PixivCrawler(SeleniumCrawler):
         latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
 
         logger.info("Start to download artworks")
-        self.download_artworks(latest_illust_url, output_dir, recursive=True, limit=self.limit, retry=self.retry)
+        self.download_artworks(latest_illust_url, output_dir, recursive=True, limit=limit, retry=self.retry)
 
-
-    def run_on_user(self, username: str):
+    def run_on_user(
+        self,
+        username: str, *,
+        limit: Optional[int] = 100
+    ):
         output_dir = self._setup("username", username)
+
         self.driver.get(f"{self.PIXIV_URL}/search_user.php?nick={username}&s_mode=s_usr")
 
         # Go to top user page
@@ -128,15 +106,20 @@ class PixivCrawler(SeleniumCrawler):
         latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
 
         logger.info("Start to download artworks")
-        self.download_artworks(latest_illust_url, output_dir, recursive=True, limit=self.limit, retry=self.retry)
+        self.download_artworks(latest_illust_url, output_dir, recursive=True, limit=limit, retry=self.retry)
 
         self.driver.close()
         first_tab = self.driver.window_handles[0]
         self.driver.switch_to.window(window_name=first_tab)
 
-        return self.driver
-
-    def download_artworks(self, url, output_dir, recursive=False, limit=100, retry=2):
+    def download_artworks(
+        self,
+        url: str,
+        output_dir: str, *,
+        recursive: Optional[bool] = False,
+        limit: Optional[int] = 100,
+        retry: Optional[int] = 5
+    ):
         try:
             logger.info(f"Move to {url}")
             self.driver.get(url)
@@ -157,13 +140,13 @@ class PixivCrawler(SeleniumCrawler):
                 if status < 0:
                     raise IOError(f"Failed to download {url}")
 
-            if recursive and limit > 0:
+            if recursive and limit > 1:
                 nav = self.driver.find_elements(By.TAG_NAME, "nav")[-1]
                 nav_elements = nav.find_elements(By.TAG_NAME, "a")
                 last_nav_url = nav_elements[-1].get_attribute("href")
                 
                 if self.driver.current_url != last_nav_url:
-                    self.download_artworks(last_nav_url, output_dir, recursive, limit - 1, self.retry)
+                    self.download_artworks(last_nav_url, output_dir, recursive=recursive, limit=limit - 1, retry=self.retry)
         except Exception as e:
             if retry > 0:
                 logger.error(f"Retry to download {url} - {retry - 1}")
@@ -172,7 +155,7 @@ class PixivCrawler(SeleniumCrawler):
                 logger.error(e)
                 # do something...
 
-    def _setup(self, mode, target):
+    def _setup(self, mode: str, target: str):
         return super()._setup("pixiv", mode, target)
 
     def _login(self, username: str, password: str):
