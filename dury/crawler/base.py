@@ -39,15 +39,15 @@ class SeleniumCrawler:
     def _delay(self) -> None:
         time.sleep(self.safe_delay)
 
-    def _explicitly_wait(self, driver: Chrome, timeout: float, condition: Any):
+    def _explicitly_wait(self, driver: Chrome, timeout: float, condition: Any) -> WebDriverWait:
         return WebDriverWait(driver, timeout).until(condition)
 
-    def _save_cookies(self, driver: Chrome):
+    def _save_cookies(self, driver: Chrome) -> None:
         cookies = driver.get_cookies()
         with open(self.cookie_file, "w") as f:
             json.dump(cookies, f, indent=4)
 
-    def _load_cookies(self, driver: Chrome, domain: str):
+    def _load_cookies(self, driver: Chrome, domain: str) -> int:
         driver.get(domain)
 
         if not os.path.exists(self.cookie_file):
@@ -59,7 +59,7 @@ class SeleniumCrawler:
             driver.add_cookie(cookie)
         return 0
 
-    def _setup(self, platform, mode, target):
+    def _setup(self, platform, mode, target) -> str:
         output_dir = os.path.join(self.output_dir, platform, mode, target)
         os.makedirs(output_dir, exist_ok=True)
         return output_dir
