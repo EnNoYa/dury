@@ -1,6 +1,6 @@
 import datetime
 
-from dury.crawler.youtube import YouTubeClient
+from dury.api.youtube import YouTubeClient
 
 
 if __name__ == "__main__":

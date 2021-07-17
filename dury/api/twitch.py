@@ -1,10 +1,16 @@
 import requests
 import re
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+import shutil
 from typing import List, Optional, Union, Dict, Any
 
+from tqdm import tqdm
+from loguru import logger
+
 from .base import APIWrapper
-from dury.utils import distributed_download
+from dury.utils import download
 
 
 class TwitchClient(APIWrapper):
@@ -152,26 +158,50 @@ class TwitchClient(APIWrapper):
         self,
         video_id: str, *,
         bitrate: Optional[str] = "720p60",
-        output_dir: Optional[str] = "video",
-        video_name: Optional[str] = None 
+        output_dir: Optional[str] = "twitch/video",
+        video_name: Optional[str] = None,
+        num_workers: Optional[int] = 10,
+        retry: Optional[int] = 5
     ):
         assert bitrate in [
             '160p30', '360p30', '480p30', '720p30',
             '720p60', 'audio_only', 'chunked'
         ], "Invalid bitrate"
 
-        os.makedirs(output_dir, exist_ok=True)
-
         access_token = self._get_access_token(video_id)["data"]["videoPlaybackAccessToken"]
         video_uri = self._get_video_uri(video_id, access_token, bitrate=bitrate)
-
         chunk_uris = self._get_chunk_uris(video_uri)
 
-        if video_name is None:
-            video_name = video_id
-        out_path = os.path.join(output_dir, f"{video_name}_{bitrate}.mp4")
-        status = distributed_download(chunk_uris, out_path)
-        return status
+        timestamp = int(time.time())
+        tmp_dir = os.path.join("/tmp", "dury", str(timestamp))
+        os.makedirs(tmp_dir, exist_ok=True)
+        task = lambda x: download(x[1], os.path.join(tmp_dir, f"{str(x[0]).zfill(8)}.ts"), retry=retry)
+
+        try:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                results = list(tqdm(executor.map(task, enumerate(chunk_uris)), total=len(chunk_uris)))
+
+            os.makedirs(output_dir, exist_ok=True)
+            if video_name is None:
+                video_name = video_id
+
+            video_path = os.path.join(output_dir, f"{video_name}_{bitrate}.mp4")
+            output_path = self._merge_chunks(results, video_path)
+            return output_path
+        except Exception as e:
+            logger.error(e)
+            return None
+        finally:
+            shutil.rmtree(tmp_dir)
+
+    def _merge_chunks(self, chunk_list: List[str], output_path: str):
+        chunk_list.sort(key=lambda x: int(os.path.basename(x).split(".")[0]))
+
+        with open(output_path, "wb") as f:
+            for chunk_path in chunk_list:
+                with open(chunk_path, "rb") as chunk:
+                    f.write(chunk.read())
+        return output_path
 
     def _get_access_token(self, video_id: str):
         query = """

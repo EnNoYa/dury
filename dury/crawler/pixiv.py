@@ -1,202 +1,270 @@
-from typing import Optional
+import os
+from dataclasses import dataclass, field
+import copy
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, List
+
+from selenium.webdriver import Chrome
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from loguru import logger
-import os
+from tqdm import tqdm
 
 from dury.utils import download
 from dury.crawler.base import SeleniumCrawler
 
 
+@dataclass
+class Artwork:
+    url: str
+    title: Optional[str] = ""
+    desc: Optional[str] = ""
+    image_urls: Optional[List[str]] = field(default_factory=list)
+    tags: Optional[List[str]] = field(default_factory=list)
+
+
 class PixivCrawler(SeleniumCrawler):
     LOGIN_URL = "https://accounts.pixiv.net/login"
-    PIXIV_URL = "https://www.pixiv.net/"
+    PIXIV_URL = "https://www.pixiv.net"
     REQUEST_HEADERS = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
         "Referer": "https://www.pixiv.net/"
     }
-    VALID_MODE_LIST = ["keyword", "author"]
 
     def __init__(
         self,
-        username: str,
-        password: str, *,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
         retry: Optional[int] = 5,
-        limit: Optional[int] = 100,
-        **kwargs
+        *args, **kwargs
     ) -> None:
-        super(PixivCrawler, self).__init__(**kwargs)
+        super(PixivCrawler, self).__init__(*args, **kwargs)
 
+        self.__username = username
+        self.__password = password
         self.retry = retry
-        self.limit = limit
 
-        status = self.load_cookies(self.PIXIV_URL)
-        if status < 0:
-            self.login(username, password)
-
-    def login(self, username: str, password: str):
-        self.driver.get(self.LOGIN_URL)
-        self.delay()
-
-        login_element = self.driver.find_element_by_xpath("//div[@id='container-login']")
-        username_input_element = login_element.find_element_by_xpath(".//input[@type='text']")
-        username_input_element.send_keys(username)
-        password_input_element = login_element.find_element_by_xpath(".//input[@type='password']")
-        password_input_element.send_keys(password)
-        login_button = login_element.find_element_by_xpath(".//button")
-        login_button.click()
+    def run_on_keyword(
+        self,
+        keyword: str, *,
+        safe_mode: Optional[bool] = True,
+        limit: Optional[int] = 100, 
+        retry: Optional[int] = 5
+    ) -> List[Artwork]:
+        driver = self._launch()
 
         try:
-            element = WebDriverWait(self.driver, 60).until(EC.presence_of_element_located((By.ID, "root")))
-            self.save_cookies()
-        except Exception as e:
-            if not os.path.exists("tmp"):
-                os.makedirs("tmp", exist_ok=True)
-            self.driver.save_screenshot("./temp/login_err.png")
-            self.driver.quit()
-            raise IOError("login sim wait failed, 'root' did not appear")
+            url = f"{self.PIXIV_URL}/tags/{keyword}/illustrations"
+            if safe_mode:
+                url += "?mode=safe"
 
-    def setup(self, target: str, mode: str, root_dir: str):
-        output_dir = os.path.join(root_dir, mode, target)
-        os.makedirs(output_dir, exist_ok=True)
-
-        self.driver.get(self.PIXIV_URL)
-        self.delay()
-
-        self.search(target)
-        self.delay()
-
-        return output_dir
-
-    def run(self, target: str, mode: str, root_dir: str = "output"):
-        try:
-            assert mode in self.VALID_MODE_LIST, "Invalid mode"
-
-            logger.info(f"Crawling target - {target}")
-            output_dir = self.setup(target, mode, root_dir)
-
-            if mode == "keyword":
-                self.run_on_keyword(output_dir)
-            elif mode == "author":
-                self.run_on_author(output_dir)
-            else:
-                raise NotImplementedError
-        except Exception as e:
-            logger.error(e)
+            artwork_urls = self.get_artwork_urls(driver, url, limit=limit)
+            artworks = self.collect_artworks(driver, artwork_urls, limit=limit, retry=retry)
+            return artworks
         finally:
-            self.driver.close()
- 
-    def run_on_keyword(self, output_dir: str = "output"):
-        # Visit all cards in each page recursively
-        artwork_urls = []
+            driver.quit()
 
-        while len(artwork_urls) < self.limit:
-            next_page = self.get_next_page()
-            image_cards = self.find_cards()
+    def run_on_id(
+        self,
+        user_id: str, *,
+        limit: Optional[int] = 100,
+        retry: Optional[int] = 5
+    ) -> List[Artwork]:
+        driver = self._launch()
+
+        try:
+            url = f"{self.PIXIV_URL}/users/{user_id}/illustrations"
+            artwork_urls = self.get_artwork_urls(driver, url, limit=limit)
+            artworks = self.collect_artworks(driver, artwork_urls, limit=limit, retry=retry)
+            return artworks
+        finally:
+            driver.quit()
+
+    def run_on_user(
+        self,
+        username: str, *,
+        limit: Optional[int] = 100,
+        retry: Optional[int] = 5
+    ) -> List[Artwork]:
+        driver = self._launch()
+
+        try:
+            driver.get(f"{self.PIXIV_URL}/search_user.php?nick={username}&s_mode=s_usr")
+
+            # Go to top user page
+            target = driver.find_elements(By.CLASS_NAME, "user-recommendation-item")[0]
+            target = target.find_element(By.CLASS_NAME, "title")
+            target.click()
+            self._delay()
+
+            # New tab is created after link to user page is clicked
+            last_tab = driver.window_handles[-1]
+
+            # Switch to illustrations page
+            logger.info("Switch to illustrations page")
+            driver.switch_to.window(window_name=last_tab)
+
+            url = f"{driver.current_url}/illustrations"
+            artwork_urls = self.get_artwork_urls(driver, url, limit=limit)
+            artworks = self.collect_artworks(driver, artwork_urls, limit=limit, retry=retry)
+            return artworks
+        finally:
+            driver.quit()
+
+    def get_artwork_urls(
+        self,
+        driver: Chrome,
+        illustration_url: str, *,
+        limit: Optional[int] = 100,
+        artwork_urls: Optional[List[str]] = []
+    ) -> List[str]:
+        driver.get(illustration_url)
+
+        image_cards = self._find_cards(driver)
+
+        if len(image_cards) > 0:
             artwork_urls += [
                 image_card.find_element(By.TAG_NAME, "a").get_attribute("href")
                 for image_card in image_cards
             ]
-            self.driver.get(next_page)
-            self.delay()
 
-        logger.info("Start to download artworks")
-        for artwork_url in artwork_urls[:self.limit]:
-            self.download_artworks(
-                artwork_url, output_dir,
-                recursive=False,
-                retry=self.retry
-            )
+            if len(artwork_urls) < limit:
+                next_page = self._get_next_page(driver)
+                return self.get_artwork_urls(driver, next_page, limit=limit, artwork_urls=artwork_urls)
 
-    def run_on_author(self, output_dir: str = "output"):
-        # Switch to user tab in search result
-        self.select_user()
+        # free cache memory before return for next run
+        tmp = copy.deepcopy(artwork_urls)
+        artwork_urls.clear() 
+        return tmp
+
+    def collect_artworks(
+        self,
+        driver: Chrome,
+        artwork_urls: List[str], *,
+        limit: Optional[int] = 100,
+        retry: Optional[int] = 5
+    ) -> List[Artwork]:
+        artworks = []
+        for artwork_url in tqdm(artwork_urls[:limit]):
+            artwork = self.get_artwork(driver, artwork_url, retry=retry)
+            artworks.append(artwork)
+        return artworks
+
+    def get_artwork(
+        self,
+        driver: Chrome,
+        artwork_url: str, *,
+        retry: Optional[int] = 5
+    ) -> Artwork:
+        try:
+            driver.get(artwork_url)
+            figure = self._explicitly_wait(driver, 5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
+            body = driver.find_element(By.TAG_NAME, "figcaption")
+            
+            try:
+                title_element = body.find_element(By.TAG_NAME, "h1")
+                title = title_element.text
+            except Exception as e:
+                logger.error(e)
+                title = ""
+
+            try:
+                desc_element = body.find_element(By.TAG_NAME, "p")
+                desc = desc_element.text
+            except Exception as e:
+                logger.error(e)
+                desc = ""
+
+            try:
+                tag_body = body.find_element(By.TAG_NAME, "footer")
+                tag_elements = tag_body.find_elements(By.TAG_NAME, "a")
+                tags = [ tag_element.text for tag_element in tag_elements]
+            except Exception as e:
+                logger.error(e)
+                tags = []
+
+            image_elements = figure.find_elements(By.TAG_NAME, "img")
+            image_urls = [ image_element.get_attribute("src") for image_element in image_elements ]
+            return Artwork(artwork_url, title, desc, image_urls, tags)
+        except Exception as e:
+            if retry > 0:
+                return self.get_artwork(driver, artwork_url, retry=retry - 1)
+            else:
+                return Artwork(artwork_url)
+
+    def download_artworks(
+        self,
+        artworks: List[Artwork], *,
+        output_dir: Optional[str] = "output/pixiv",
+        num_workers: Optional[int] = 10,
+    ):
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        image_urls = []
+        for artwork in artworks:
+            image_urls += artwork.image_urls
+
+        task = lambda x: download(
+            x,
+            os.path.join(output_dir, x.split("/")[-1]),
+            headers=self.REQUEST_HEADERS
+        )
+        
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            results = list(tqdm(executor.map(task, image_urls), total=len(image_urls)))
+        return results
+
+    def _launch(self) -> Chrome:
+        driver = super()._launch()
+        status = self._load_cookies(driver, self.PIXIV_URL)
+        if status < 0 and (self.__username and self.__password):
+            self._login(self.__username, self.__password)
+        return driver
+
+    def _setup(self, mode: str, target: str) -> str:
+        return super()._setup("pixiv", mode, target)
+
+    def _login(self, driver: Chrome):
+        driver.get(self.LOGIN_URL)
         self.delay()
 
-        # Go to top user page
-        target = self.driver.find_elements(By.CLASS_NAME, "user-recommendation-item")[0]
-        target = target.find_element(By.CLASS_NAME, "title")
-        target.click()
-        self.delay()
+        login_element = driver.find_element_by_xpath("//div[@id='container-login']")
+        username_input_element = login_element.find_element_by_xpath(".//input[@type='text']")
+        username_input_element.send_keys(self.__username)
+        password_input_element = login_element.find_element_by_xpath(".//input[@type='password']")
+        password_input_element.send_keys(self.__password)
+        login_button = login_element.find_element_by_xpath(".//button")
+        login_button.click()
 
-        # New tab is created after link to user page is clicked
-        last_tab = self.driver.window_handles[-1]
+        try:
+            element = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.ID, "root")))
+            self.save_cookies()
+        except Exception as e:
+            if not os.path.exists("tmp"):
+                os.makedirs("tmp", exist_ok=True)
+            driver.save_screenshot("./temp/login_err.png")
+            driver.quit()
+            raise IOError("login sim wait failed, 'root' did not appear")
 
-        # Switch to illustrations page
-        logger.info("Switch to illustrations page")
-        self.driver.switch_to.window(window_name=last_tab)
-        illust_link = self.driver.find_element(By.PARTIAL_LINK_TEXT, "일러스트")
-        illust_link.click()
-        self.delay()
-
-        # Visit each artworks page recursively
-        image_cards = self.find_cards()
-        latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
-
-        logger.info("Start to download artworks")
-        self.download_artworks(latest_illust_url, output_dir, recursive=True, limit=self.limit, retry=self.retry)
-
-        self.driver.close()
-        first_tab = self.driver.window_handles[0]
-        self.driver.switch_to.window(window_name=first_tab)
-
-        return self.driver
-
-    def search(self, keyword):
+    def _search(self, driver: Chrome, keyword: str):
         logger.info("Enter search bar")
-        search_element = self.driver.find_element_by_xpath("//input[@type='text']")
+        search_element = driver.find_element_by_xpath("//input[@type='text']")
         search_element.send_keys(keyword)
         search_element.submit()
     
-    def find_cards(self):
-        section = self.driver.find_elements(By.TAG_NAME,"section")[0]
+    def _find_cards(self, driver: Chrome):
+        section = driver.find_elements(By.TAG_NAME,"section")[0]
         image_cards = section.find_elements(By.TAG_NAME, "li")
         return image_cards
 
-    def get_next_page(self):
-        nav_bar = self.driver.find_elements(By.TAG_NAME, "nav")
-        nav_links = nav_bar[-1].find_elements(By.TAG_NAME, "a")
+    def _get_next_page(self, driver: Chrome):
+        nav_links = driver.find_elements_by_xpath(".//a[contains(@href, '?p=') or contains(@href, '&p=')]")
         next_page = nav_links[-1].get_attribute("href")
         return next_page
 
-    def select_user(self):
+    def _select_user(self, driver: Chrome):
         logger.info("Select user on search result")
-        user_href = self.driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
+        user_href = driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
         user_href.click()
-
-    def download_artworks(self, url, output_dir, recursive=False, limit=100, retry=2):
-        try:
-            logger.info(f"Move to {url}")
-            self.driver.get(url)
-            
-            figure = self.explicitly_wait(5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
-            image_elements = figure.find_elements(By.TAG_NAME, "img")
-            
-            for image_element in image_elements:
-                image_url = image_element.get_attribute("src")
-                image_name = image_url.split("/")[-1]
-                out_path = os.path.join(output_dir, image_name)
-                if os.path.exists(out_path):
-                    logger.info(f"Skip download {image_url}")
-                    continue
-                
-                logger.info(f"Download {image_url}")
-                status = download(image_url, out_path, self.REQUEST_HEADERS)
-                if status < 0:
-                    raise IOError(f"Failed to download {url}")
-
-            if recursive and limit > 0:
-                nav = self.driver.find_elements(By.TAG_NAME, "nav")[-1]
-                nav_elements = nav.find_elements(By.TAG_NAME, "a")
-                last_nav_url = nav_elements[-1].get_attribute("href")
-                
-                if self.driver.current_url != last_nav_url:
-                    self.download_artworks(last_nav_url, output_dir, recursive, limit - 1, self.retry)
-        except Exception as e:
-            if retry > 0:
-                logger.error(f"Retry to download {url} - {retry - 1}")
-                self.download_artworks(url, output_dir, recursive, limit, retry - 1)
-            else:
-                logger.error(e)
-                # do something...
