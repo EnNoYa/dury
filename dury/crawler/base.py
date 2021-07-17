@@ -56,7 +56,7 @@ class SeleniumCrawler:
         with open(self.cookie_file, "r") as f:
                 cookies = json.load(f)
         for cookie in cookies:
-            self.driver.add_cookie(cookie)
+            driver.add_cookie(cookie)
         return 0
 
     def _setup(self, platform, mode, target):

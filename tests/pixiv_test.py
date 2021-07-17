@@ -12,12 +12,12 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default="pixiv_output")
     args = parser.parse_args()
 
-    username = os.environ.get("PIXIV_USERNAME")
-    password = os.environ.get("PIXIV_PASSWORD")
+    username = os.environ.get("PIXIV_USERNAME", None)
+    password = os.environ.get("PIXIV_PASSWORD", None)
     crawler = PixivCrawler(username, password, driver_path="./chromedriver")
 
-    crawler.run_on_id("11", limit=1)
-    crawler.run_on_user("pixiv事務局", limit=1)
-    crawler.run_on_keyword("風景", safe_mode=True, limit=1)
+    crawler.run_on_id("11", limit=2)
+    crawler.run_on_user("pixiv事務局", limit=2)
+    crawler.run_on_keyword("風景", safe_mode=True, limit=2)
 
     print("Done")

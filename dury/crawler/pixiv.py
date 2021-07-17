@@ -1,7 +1,7 @@
 import os
-from enum import Enum
-from typing import Optional, Union
+from typing import Optional
 
+from selenium.webdriver import Chrome
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -21,14 +21,18 @@ class PixivCrawler(SeleniumCrawler):
     }
     VALID_MODE_LIST = ["keyword", "author"]
 
-    def __init__(self, username: str, password: str, retry: Optional[int] = 5, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        retry: Optional[int] = 5,
+        *args, **kwargs
+    ) -> None:
         super(PixivCrawler, self).__init__(*args, **kwargs)
 
+        self.__username = username
+        self.__password = password
         self.retry = retry
-
-        status = self._load_cookies(self.PIXIV_URL)
-        if status < 0:
-            self._login(username, password)
 
     def run_on_keyword(
         self,
@@ -36,84 +40,100 @@ class PixivCrawler(SeleniumCrawler):
         safe_mode: Optional[bool] = True,
         limit: Optional[int] = 100
     ):
-        output_dir = self._setup("keyword", keyword)
-        url = f"{self.PIXIV_URL}/tags/{keyword}/illustrations"
-        if safe_mode:
-            url += "?mode=safe"
+        driver = self._launch()
 
-        self.driver.get(url)
+        try:
+            output_dir = self._setup("keyword", keyword)
+            url = f"{self.PIXIV_URL}/tags/{keyword}/illustrations"
+            if safe_mode:
+                url += "?mode=safe"
 
-        artwork_urls = []
-        while len(artwork_urls) < limit:
-            next_page = self._get_next_page()
-            image_cards = self._find_cards()
-            artwork_urls += [
-                image_card.find_element(By.TAG_NAME, "a").get_attribute("href")
-                for image_card in image_cards
-            ]
-            self.driver.get(next_page)
-            self._delay()
+            driver.get(url)
 
-        logger.info("Start to download artworks")
-        for artwork_url in tqdm(artwork_urls[:limit]):
-            self.download_artworks(
-                artwork_url, output_dir,
-                recursive=False,
-                retry=self.retry
-            )
+            artwork_urls = []
+            while len(artwork_urls) < limit:
+                next_page = self._get_next_page(driver)
+                image_cards = self._find_cards(driver)
+                artwork_urls += [
+                    image_card.find_element(By.TAG_NAME, "a").get_attribute("href")
+                    for image_card in image_cards
+                ]
+                driver.get(next_page)
+                self._delay()
+
+            logger.info("Start to download artworks")
+            for artwork_url in tqdm(artwork_urls[:limit]):
+                self.download_artworks(
+                    driver, artwork_url, output_dir,
+                    recursive=False,
+                    retry=self.retry
+                )
+        finally:
+            driver.quit()
 
     def run_on_id(
         self,
         user_id: str, *,
         limit: Optional[int] = 100
     ):
-        output_dir = self._setup("user_id", user_id)
+        driver = self._launch()
 
-        self.driver.get(f"{self.PIXIV_URL}/users/{user_id}/illustrations")
-        
-        # Visit each artworks page recursively
-        image_cards = self._find_cards()
-        latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
+        try:
+            output_dir = self._setup("user_id", user_id)
 
-        logger.info("Start to download artworks")
-        self.download_artworks(latest_illust_url, output_dir, recursive=True, limit=limit, retry=self.retry)
+            driver.get(f"{self.PIXIV_URL}/users/{user_id}/illustrations")
+            
+            # Visit each artworks page recursively
+            image_cards = self._find_cards(driver)
+            latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
+
+            logger.info("Start to download artworks")
+            self.download_artworks(driver, latest_illust_url, output_dir, recursive=True, limit=limit, retry=self.retry)
+        finally:
+            driver.quit()
 
     def run_on_user(
         self,
         username: str, *,
         limit: Optional[int] = 100
     ):
-        output_dir = self._setup("username", username)
+        driver = self._launch()
 
-        self.driver.get(f"{self.PIXIV_URL}/search_user.php?nick={username}&s_mode=s_usr")
+        try:
+            output_dir = self._setup("username", username)
 
-        # Go to top user page
-        target = self.driver.find_elements(By.CLASS_NAME, "user-recommendation-item")[0]
-        target = target.find_element(By.CLASS_NAME, "title")
-        target.click()
-        self._delay()
+            driver.get(f"{self.PIXIV_URL}/search_user.php?nick={username}&s_mode=s_usr")
 
-        # New tab is created after link to user page is clicked
-        last_tab = self.driver.window_handles[-1]
+            # Go to top user page
+            target = driver.find_elements(By.CLASS_NAME, "user-recommendation-item")[0]
+            target = target.find_element(By.CLASS_NAME, "title")
+            target.click()
+            self._delay()
 
-        # Switch to illustrations page
-        logger.info("Switch to illustrations page")
-        self.driver.switch_to.window(window_name=last_tab)
-        self.driver.get(f"{self.driver.current_url}/illustrations")
+            # New tab is created after link to user page is clicked
+            last_tab = driver.window_handles[-1]
 
-        # Visit each artworks page recursively
-        image_cards = self._find_cards()
-        latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
+            # Switch to illustrations page
+            logger.info("Switch to illustrations page")
+            driver.switch_to.window(window_name=last_tab)
+            driver.get(f"{driver.current_url}/illustrations")
 
-        logger.info("Start to download artworks")
-        self.download_artworks(latest_illust_url, output_dir, recursive=True, limit=limit, retry=self.retry)
+            # Visit each artworks page recursively
+            image_cards = self._find_cards(driver)
+            latest_illust_url = image_cards[0].find_element(By.TAG_NAME, "a").get_attribute("href")
 
-        self.driver.close()
-        first_tab = self.driver.window_handles[0]
-        self.driver.switch_to.window(window_name=first_tab)
+            logger.info("Start to download artworks")
+            self.download_artworks(driver, latest_illust_url, output_dir, recursive=True, limit=limit, retry=self.retry)
+
+            driver.close()
+            first_tab = driver.window_handles[0]
+            driver.switch_to.window(window_name=first_tab)
+        finally:
+            driver.quit()
 
     def download_artworks(
         self,
+        driver: Chrome,
         url: str,
         output_dir: str, *,
         recursive: Optional[bool] = False,
@@ -122,9 +142,9 @@ class PixivCrawler(SeleniumCrawler):
     ):
         try:
             logger.info(f"Move to {url}")
-            self.driver.get(url)
+            driver.get(url)
             
-            figure = self._explicitly_wait(5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
+            figure = self._explicitly_wait(driver, 5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
             image_elements = figure.find_elements(By.TAG_NAME, "img")
             
             for image_element in image_elements:
@@ -141,63 +161,70 @@ class PixivCrawler(SeleniumCrawler):
                     raise IOError(f"Failed to download {url}")
 
             if recursive and limit > 1:
-                nav = self.driver.find_elements(By.TAG_NAME, "nav")[-1]
+                nav = driver.find_elements(By.TAG_NAME, "nav")[-1]
                 nav_elements = nav.find_elements(By.TAG_NAME, "a")
                 last_nav_url = nav_elements[-1].get_attribute("href")
                 
-                if self.driver.current_url != last_nav_url:
-                    self.download_artworks(last_nav_url, output_dir, recursive=recursive, limit=limit - 1, retry=self.retry)
+                if driver.current_url != last_nav_url:
+                    self.download_artworks(driver, last_nav_url, output_dir, recursive=recursive, limit=limit - 1, retry=self.retry)
         except Exception as e:
             if retry > 0:
                 logger.error(f"Retry to download {url} - {retry - 1}")
-                self.download_artworks(url, output_dir, recursive, limit, retry - 1)
+                self.download_artworks(driver, url, output_dir, recursive, limit, retry - 1)
             else:
                 logger.error(e)
                 # do something...
 
+    def _launch(self) -> Chrome:
+        driver = super()._launch()
+        status = self._load_cookies(driver, self.PIXIV_URL)
+        if status < 0 and (self.__username and self.__password):
+            self._login(self.__username, self.__password)
+        return driver
+
     def _setup(self, mode: str, target: str):
         return super()._setup("pixiv", mode, target)
 
-    def _login(self, username: str, password: str):
-        self.driver.get(self.LOGIN_URL)
+    def _login(self, driver: Chrome):
+        driver.get(self.LOGIN_URL)
         self.delay()
 
-        login_element = self.driver.find_element_by_xpath("//div[@id='container-login']")
+        login_element = driver.find_element_by_xpath("//div[@id='container-login']")
         username_input_element = login_element.find_element_by_xpath(".//input[@type='text']")
-        username_input_element.send_keys(username)
+        username_input_element.send_keys(self.__username)
         password_input_element = login_element.find_element_by_xpath(".//input[@type='password']")
-        password_input_element.send_keys(password)
+        password_input_element.send_keys(self.__password)
         login_button = login_element.find_element_by_xpath(".//button")
         login_button.click()
 
         try:
-            element = WebDriverWait(self.driver, 60).until(EC.presence_of_element_located((By.ID, "root")))
+            element = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.ID, "root")))
             self.save_cookies()
         except Exception as e:
             if not os.path.exists("tmp"):
                 os.makedirs("tmp", exist_ok=True)
-            self.driver.save_screenshot("./temp/login_err.png")
-            self.driver.quit()
+            driver.save_screenshot("./temp/login_err.png")
+            driver.quit()
             raise IOError("login sim wait failed, 'root' did not appear")
 
-    def _search(self, keyword):
+    def _search(self, driver: Chrome, keyword: str):
         logger.info("Enter search bar")
-        search_element = self.driver.find_element_by_xpath("//input[@type='text']")
+        search_element = driver.find_element_by_xpath("//input[@type='text']")
         search_element.send_keys(keyword)
         search_element.submit()
     
-    def _find_cards(self):
-        section = self.driver.find_elements(By.TAG_NAME,"section")[0]
+    def _find_cards(self, driver: Chrome):
+        section = driver.find_elements(By.TAG_NAME,"section")[0]
         image_cards = section.find_elements(By.TAG_NAME, "li")
         return image_cards
 
-    def _get_next_page(self):
-        nav_bar = self.driver.find_elements(By.TAG_NAME, "nav")
+    def _get_next_page(self, driver: Chrome):
+        nav_bar = driver.find_elements(By.TAG_NAME, "nav")
         nav_links = nav_bar[-1].find_elements(By.TAG_NAME, "a")
         next_page = nav_links[-1].get_attribute("href")
         return next_page
 
-    def _select_user(self):
+    def _select_user(self, driver: Chrome):
         logger.info("Select user on search result")
-        user_href = self.driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
+        user_href = driver.find_element(By.PARTIAL_LINK_TEXT, "유저")
         user_href.click()
