@@ -1,3 +1,4 @@
+from copy import copy
 import os
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -12,10 +13,12 @@ from .base import SeleniumCrawler
 
 
 @dataclass
-class Post:
+class Article:
+    username: str
     url: str
     title: Optional[str] = ""
-    desc: Optional[str] = ""
+    likes: Optional[int] = -1
+    datetime: Optional[str] = ""
     image_urls: Optional[List[str]] = field(default_factory=list)
     tags: Optional[List[str]] = field(default_factory=list)
 
@@ -37,12 +40,12 @@ class InstagramCrawler(SeleniumCrawler):
         self.__password = password
         self.cookie_file = cookie_file
 
-    def run_on_user(self, user: str):
+    def run_on_user(self, user: str, *, limit: Optional[int] = 100):
         driver = self._launch()
 
         try:
             url = f"{self.INSTAGRAM_URL}/{user}/"
-            self.get_post_urls(driver, url)
+            self.collect_articles(driver, url, limit=limit)
         finally:
             driver.quit()
 
@@ -54,10 +57,58 @@ class InstagramCrawler(SeleniumCrawler):
         finally:
             driver.quit()
 
-    def get_post_urls(self, driver: Chrome, page_url: str):
+    def collect_articles(
+        self,
+        driver: Chrome,
+        page_url: str,
+        limit: Optional[int] = 100
+    ):
         driver.get(page_url)
 
-        print("A")
+        article = driver.find_element(By.TAG_NAME, "article")
+        latest_article = article.find_element(By.TAG_NAME, "a").get_attribute("href")
+
+        articles = self.traverse_articles(driver, latest_article, limit=limit)
+
+        return articles
+
+    def traverse_articles(
+        self,
+        driver: Chrome,
+        article_url: str, *,
+        limit: Optional[int] = 100,
+        articles: Optional[List[Article]] = []
+    ):
+        article, pagination = self.get_article(driver, article_url)
+
+        if limit > 0:
+            return self.get_articles(driver, article_url, limit=limit - 1, articles=articles)
+
+        tmp = copy.deepcopy(articles)
+        articles.clear()
+        return tmp
+
+    def get_article(self, driver: Chrome, article_url):
+        driver.get(article_url)
+
+        article_element = driver.find_element(By.TAG_NAME, "article")
+        
+        header_element = article_element.find_element(By.TAG_NAME, "header")
+        username = header_element.text.split("\n")[0]
+        
+        image_container = article_element.find_element_by_xpath("//div[@role='presentation']")
+        image_elements = image_container.find_elements(By.TAG_NAME, "img")
+        image_urls = [ image_element.get_attribute("src") for image_element in image_elements ]
+        
+        like_element = article_element.find_element_by_xpath(".//a[contains(@href, 'liked_by')]")
+        like_count = int(like_element.text.split(" ")[0].replace(",", ""))
+        
+        time_element = article_element.find_elements(By.TAG_NAME, "time")[-1]
+        d_time = time_element.get_attribute("datetime")
+
+        # TODO: handle comment
+
+        return None, None
 
     def _launch(self) -> Chrome:
         driver = super()._launch()
