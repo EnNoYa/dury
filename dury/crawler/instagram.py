@@ -45,15 +45,18 @@ class InstagramCrawler(SeleniumCrawler):
 
         try:
             url = f"{self.INSTAGRAM_URL}/{user}/"
-            self.collect_articles(driver, url, limit=limit)
+            articles = self.collect_articles(driver, url, limit=limit)
+            return articles
         finally:
             driver.quit()
 
-    def run_on_hashtag(self, hashtag: str):
+    def run_on_hashtag(self, hashtag: str, *, limit: Optional[int] = 100):
         driver = self._launch()
 
         try:
             url = f"{self.INSTAGRAM_URL}/explore/tags/{hashtag}/"
+            articles = self.collect_articles(driver, url, limit=limit)
+            return articles
         finally:
             driver.quit()
 
@@ -95,9 +98,8 @@ class InstagramCrawler(SeleniumCrawler):
         
         header_element = article_element.find_element(By.TAG_NAME, "header")
         username = header_element.text.split("\n")[0]
-        
-        image_container = article_element.find_element_by_xpath("//div[@role='presentation']")
-        image_elements = image_container.find_elements(By.TAG_NAME, "img")
+
+        image_elements = article_element.find_elements(By.CLASS_NAME, "FFVAD")
         image_urls = [ image_element.get_attribute("src") for image_element in image_elements ]
         
         like_element = article_element.find_element_by_xpath(".//a[contains(@href, 'liked_by')]")
@@ -109,6 +111,9 @@ class InstagramCrawler(SeleniumCrawler):
         # TODO: handle comment
 
         return None, None
+
+    def get_comments(self):
+        ...
 
     def _launch(self) -> Chrome:
         driver = super()._launch()
