@@ -8,6 +8,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from loguru import logger
+from tqdm import tqdm
 
 from .base import SeleniumCrawler
 
@@ -53,104 +54,144 @@ class InstagramCrawler(SeleniumCrawler):
         driver = self._launch()
 
         try:
-            url = f"{self.INSTAGRAM_URL}/{user}/"
-            articles = self.collect_articles(driver, url, limit=limit)
+            main_page_url = f"{self.INSTAGRAM_URL}/{user}/"
+            article_urls = self.get_article_urls(driver, main_page_url, limit=limit)
+            articles = self.collect_articles(driver, article_urls, limit=limit)
             return articles
         finally:
             driver.quit()
 
-    def run_on_hashtag(self, hashtag: str, *, limit: Optional[int] = 100):
+    def run_on_hashtag(
+        self,
+        hashtag: str, *,
+        limit: Optional[int] = 100
+    ):
         driver = self._launch()
 
         try:
-            url = f"{self.INSTAGRAM_URL}/explore/tags/{hashtag}/"
-            articles = self.collect_articles(driver, url, limit=limit)
+            main_page_url = f"{self.INSTAGRAM_URL}/explore/tags/{hashtag}/"
+            article_urls = self.get_article_urls(driver, main_page_url, limit=limit)
+            articles = self.collect_articles(driver, article_urls, limit=limit)
             return articles
         finally:
             driver.quit()
+
+    def get_article_urls(
+        self,
+        driver: Chrome,
+        main_page_url: str, *,
+        limit: Optional[int] = 100,
+        max_retry: Optional[int] = 5
+    ) -> List[str]:
+        driver.get(main_page_url)
+
+        cache = {}
+        prev_num_urls = 0
+        retry_cnt = max_retry
+
+        while (retry_cnt > 0 and len(cache.keys()) < limit):
+            article_element = driver.find_element(By.TAG_NAME, "article")
+            article_links = article_element.find_elements(By.TAG_NAME, "a")
+
+            for article_link in article_links:
+                href = article_link.get_attribute("href")
+                if href not in cache:
+                    cache[href] = None
+
+            if prev_num_urls == len(cache.keys()):
+                retry_cnt -= 1
+            else:
+                retry_cnt = max_retry
+            
+            prev_num_urls = len(cache.keys())
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            self._delay(1)
+
+        return list(cache.keys())
 
     def collect_articles(
         self,
         driver: Chrome,
-        page_url: str,
-        limit: Optional[int] = 100
-    ):
-        driver.get(page_url)
-
-        article = driver.find_element(By.TAG_NAME, "article")
-        latest_article = article.find_element(By.TAG_NAME, "a").get_attribute("href")
-
-        articles = self.traverse_articles(driver, latest_article, limit=limit)
-
+        article_urls: List[str], *,
+        limit: Optional[int] = 100,
+        retry: Optional[int] = 5,
+        safe_delay: Optional[float] = 10
+    ) -> List[Article]:
+        articles = []
+        for article_url in tqdm(article_urls[:limit]):
+            article = self.get_article(driver, article_url, retry=retry)
+            articles.append(article)
+            self._delay(safe_delay)
         return articles
 
-    def traverse_articles(
+    def get_article(
         self,
         driver: Chrome,
         article_url: str, *,
-        limit: Optional[int] = 100,
-        articles: Optional[List[Article]] = []
-    ):
-        article, next_article_url = self.get_article(driver, article_url)
-        articles.append(article)
-
-        if limit > 1 and next_article_url is not None:
-            return self.traverse_articles(driver, next_article_url, limit=limit - 1, articles=articles)
-
-        tmp = copy.deepcopy(articles)
-        articles.clear()
-        return tmp
-
-    def get_article(self, driver: Chrome, article_url):
+        retry: Optional[int] = 5
+    ) -> Article:
         driver.get(article_url)
 
         article_element = driver.find_element(By.TAG_NAME, "article")
-        
         header_element = article_element.find_element(By.TAG_NAME, "header")
         username = header_element.text.split("\n")[0]
         article_id = driver.current_url.split("/")[-2]
 
-        image_elements = article_element.find_elements(By.CLASS_NAME, "FFVAD")
-        image_urls = [ image_element.get_attribute("src") for image_element in image_elements ]
-        
-        like_element = article_element.find_element_by_xpath(".//a[contains(@href, 'liked_by')]")
-        like_count = int(like_element.text.split(" ")[0].replace(",", ""))
-        
-        time_element = article_element.find_elements(By.TAG_NAME, "time")[-1]
-        d_time = time_element.get_attribute("datetime")
-
-        main_element = article_element.find_element_by_xpath(".//li[@role='menuitem']")
-        
-        comments = self.get_comments(driver)
-
         try:
-            tags = article_element.find_element_by_xpath(".//a[contains(@href, '/explore/tags')]")
+            image_elements = article_element.find_elements(By.CLASS_NAME, "FFVAD")
+            image_urls = [ image_element.get_attribute("src") for image_element in image_elements ]
+            
+            like_element = article_element.find_element_by_xpath(".//a[contains(@href, 'liked_by')]")
+            like_count = int(like_element.text.split(" ")[0].replace(",", ""))
+            
+            time_element = article_element.find_elements(By.TAG_NAME, "time")[-1]
+            d_time = time_element.get_attribute("datetime")
+
+            main_element = article_element.find_element_by_xpath(".//li[@role='menuitem']")
+            
+            comments = self.get_comments(driver)
+
+            try:
+                tags = article_element.find_element_by_xpath(".//a[contains(@href, '/explore/tags')]")
+            except Exception as e:
+                logger.info(e)
+                tags = []
+
+            article = Article(
+                username, article_id, main_element.text,
+                like_count, d_time, image_urls, tags, comments
+            )
+            return article
         except Exception as e:
-            logger.info(e)
-            tags = []
+            logger.error(e)
 
-        article = Article(
-            username, article_id, main_element.text,
-            like_count, d_time, image_urls, tags, comments
-        )
+            if retry > 1:
+                return self.get_article(driver, article_url, retry=retry - 1)
+            else:
+                return Article(username, article_id)
 
-        try:
-            more_article_container = driver.find_element(By.CLASS_NAME, "Z666a")
-            next_article_url = more_article_container.find_elements(By.TAG_NAME, "a")[2].get_attribute("href")
-        except Exception as e:
-            logger.info(e)
-            next_article_url = None
-
-        return article, next_article_url
-
-    def get_comments(self, driver: Chrome):
+    def get_comments(
+        self,
+        driver: Chrome,
+        max_retry: Optional[int] = 5
+    ) -> List[Comment]:
         article_element = driver.find_element(By.TAG_NAME, "article")
 
-        while(True):
+        prev_num_comments = 0
+        retry_cnt = max_retry
+        while(retry_cnt > 0):
             try:
                 more_button = article_element.find_element_by_xpath(".//span[contains(@aria-label, 'Load more comments')]")
                 more_button.click()
                 self._delay(2)
+                comment_elements = article_element.find_elements(By.CLASS_NAME, "Mr508")
+                
+                if prev_num_comments == len(comment_elements):
+                    retry_cnt -= 1
+                else:
+                    retry_cnt = max_retry
+
+                prev_num_comments = len(comment_elements)
             except Exception as e:
                 logger.info(e)
                 break
