@@ -152,7 +152,8 @@ class InstagramCrawler(SeleniumCrawler):
             comments = self.get_comments(driver)
 
             try:
-                tags = article_element.find_element_by_xpath(".//a[contains(@href, '/explore/tags')]")
+                tag_elements = article_element.find_elements_by_xpath(".//a[contains(@href, '/explore/tags')]")
+                tags = [ tag_element.text for tag_element in tag_elements ]
             except Exception as e:
                 logger.info(e)
                 tags = []
