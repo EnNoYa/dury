@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass, field
 import copy
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
 from typing import Optional, List
 
 from selenium.webdriver import Chrome
@@ -17,6 +18,7 @@ from dury.crawler.base import SeleniumCrawler
 
 @dataclass
 class Artwork:
+    id: str
     url: str
     title: Optional[str] = ""
     desc: Optional[str] = ""
@@ -36,14 +38,14 @@ class PixivCrawler(SeleniumCrawler):
         self,
         username: Optional[str] = None,
         password: Optional[str] = None,
-        retry: Optional[int] = 5,
+        cookie_file: Optional[str] = "pixiv_cookie.json",
         *args, **kwargs
     ) -> None:
         super(PixivCrawler, self).__init__(*args, **kwargs)
 
         self.__username = username
         self.__password = password
-        self.retry = retry
+        self.cookie_file = cookie_file
 
     def run_on_keyword(
         self,
@@ -157,8 +159,11 @@ class PixivCrawler(SeleniumCrawler):
         artwork_url: str, *,
         retry: Optional[int] = 5
     ) -> Artwork:
+
+        driver.get(artwork_url)
+        artwork_id = urlparse(driver.current_url).path.split("/")[-1]
+
         try:
-            driver.get(artwork_url)
             figure = self._explicitly_wait(driver, 5, EC.visibility_of_element_located((By.TAG_NAME, "figure")))
             body = driver.find_element(By.TAG_NAME, "figcaption")
             
@@ -186,12 +191,12 @@ class PixivCrawler(SeleniumCrawler):
 
             image_elements = figure.find_elements(By.TAG_NAME, "img")
             image_urls = [ image_element.get_attribute("src") for image_element in image_elements ]
-            return Artwork(artwork_url, title, desc, image_urls, tags)
+            return Artwork(artwork_id, artwork_url, title, desc, image_urls, tags)
         except Exception as e:
             if retry > 0:
                 return self.get_artwork(driver, artwork_url, retry=retry - 1)
             else:
-                return Artwork(artwork_url)
+                return Artwork(artwork_id, artwork_url)
 
     def download_artworks(
         self,
@@ -218,9 +223,9 @@ class PixivCrawler(SeleniumCrawler):
 
     def _launch(self) -> Chrome:
         driver = super()._launch()
-        status = self._load_cookies(driver, self.PIXIV_URL)
+        status = self._load_cookies(driver, self.cookie_file, self.PIXIV_URL)
         if status < 0 and (self.__username and self.__password):
-            self._login(self.__username, self.__password)
+            self._login(driver)
         return driver
 
     def _setup(self, mode: str, target: str) -> str:
@@ -228,7 +233,7 @@ class PixivCrawler(SeleniumCrawler):
 
     def _login(self, driver: Chrome):
         driver.get(self.LOGIN_URL)
-        self.delay()
+        self._delay()
 
         login_element = driver.find_element_by_xpath("//div[@id='container-login']")
         username_input_element = login_element.find_element_by_xpath(".//input[@type='text']")
@@ -240,7 +245,7 @@ class PixivCrawler(SeleniumCrawler):
 
         try:
             element = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.ID, "root")))
-            self.save_cookies()
+            self._save_cookies(driver, self.cookie_file)
         except Exception as e:
             if not os.path.exists("tmp"):
                 os.makedirs("tmp", exist_ok=True)
