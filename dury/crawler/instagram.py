@@ -1,4 +1,4 @@
-from copy import copy
+import copy
 import os
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -13,14 +13,23 @@ from .base import SeleniumCrawler
 
 
 @dataclass
+class Comment:
+    username: str
+    text: Optional[str] = ""
+    like_count: Optional[int] = -1
+    datetime: Optional[str] = ""
+
+
+@dataclass
 class Article:
     username: str
-    url: str
-    title: Optional[str] = ""
-    likes: Optional[int] = -1
+    article_id: str
+    text: Optional[str] = ""
+    like_count: Optional[int] = -1
     datetime: Optional[str] = ""
     image_urls: Optional[List[str]] = field(default_factory=list)
     tags: Optional[List[str]] = field(default_factory=list)
+    comments: Optional[List[Comment]] = field(default_factory=list)
 
 
 class InstagramCrawler(SeleniumCrawler):
@@ -82,10 +91,11 @@ class InstagramCrawler(SeleniumCrawler):
         limit: Optional[int] = 100,
         articles: Optional[List[Article]] = []
     ):
-        article, pagination = self.get_article(driver, article_url)
+        article, next_article_url = self.get_article(driver, article_url)
+        articles.append(article)
 
-        if limit > 0:
-            return self.get_articles(driver, article_url, limit=limit - 1, articles=articles)
+        if limit > 1 and next_article_url is not None:
+            return self.traverse_articles(driver, next_article_url, limit=limit - 1, articles=articles)
 
         tmp = copy.deepcopy(articles)
         articles.clear()
@@ -98,6 +108,7 @@ class InstagramCrawler(SeleniumCrawler):
         
         header_element = article_element.find_element(By.TAG_NAME, "header")
         username = header_element.text.split("\n")[0]
+        article_id = driver.current_url.split("/")[-2]
 
         image_elements = article_element.find_elements(By.CLASS_NAME, "FFVAD")
         image_urls = [ image_element.get_attribute("src") for image_element in image_elements ]
@@ -108,12 +119,72 @@ class InstagramCrawler(SeleniumCrawler):
         time_element = article_element.find_elements(By.TAG_NAME, "time")[-1]
         d_time = time_element.get_attribute("datetime")
 
-        # TODO: handle comment
+        main_element = article_element.find_element_by_xpath(".//li[@role='menuitem']")
+        
+        comments = self.get_comments(driver)
 
-        return None, None
+        try:
+            tags = article_element.find_element_by_xpath(".//a[contains(@href, '/explore/tags')]")
+        except Exception as e:
+            logger.info(e)
+            tags = []
 
-    def get_comments(self):
-        ...
+        article = Article(
+            username, article_id, main_element.text,
+            like_count, d_time, image_urls, tags, comments
+        )
+
+        try:
+            more_article_container = driver.find_element(By.CLASS_NAME, "Z666a")
+            next_article_url = more_article_container.find_elements(By.TAG_NAME, "a")[2].get_attribute("href")
+        except Exception as e:
+            logger.info(e)
+            next_article_url = None
+
+        return article, next_article_url
+
+    def get_comments(self, driver: Chrome):
+        article_element = driver.find_element(By.TAG_NAME, "article")
+
+        while(True):
+            try:
+                more_button = article_element.find_element_by_xpath(".//span[contains(@aria-label, 'Load more comments')]")
+                more_button.click()
+                self._delay(2)
+            except Exception as e:
+                logger.info(e)
+                break
+
+        try:
+            comment_elements = article_element.find_elements(By.CLASS_NAME, "Mr508")
+        except Exception as e:
+            logger.info(e)
+            comment_elements = []
+
+        comments = []
+        for comment_element in comment_elements:
+            meta_elements = comment_element.find_elements(By.CLASS_NAME, "FH9sR")
+            try:
+                d_time = meta_elements[0].get_attribute("datetime")
+            except Exception as e:
+                logger.info(e)
+                continue
+
+            if len(meta_elements) == 3:
+                like_count = int(meta_elements[1].text.split(" ")[0].replace(",", ""))
+            else:
+                like_count = 0
+
+            username = comment_element.text.split("\n")[0]
+            comment = Comment(
+                username,
+                comment_element.text,
+                like_count,
+                d_time
+            )
+            comments.append(comment)
+
+        return comments
 
     def _launch(self) -> Chrome:
         driver = super()._launch()

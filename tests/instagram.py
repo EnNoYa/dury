@@ -12,6 +12,7 @@ if __name__ == "__main__":
 
     crawler = InstagramCrawler(username, password)
 
-    crawler.run_on_user("rachel_mypark")
-    crawler.run_on_hashtag("커피")
+    articles_0 = crawler.run_on_user("pixel._.store", limit=2)
+    articles_1 = crawler.run_on_user("yangazi025", limit=2)
+    articles_2 = crawler.run_on_hashtag("커피", limit=2)
     print("Done")
