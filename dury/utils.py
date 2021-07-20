@@ -20,3 +20,13 @@ def download(
         return download(url, output_path, headers=headers, timeout=timeout, retry=retry - 1)
     else:
         raise IOError("Failed to download")
+
+
+def get_extension(path: str):
+    path = path.lower()
+    if ".jpg" in path or ".jpeg" in path:
+        return "jpg"
+    elif ".png" in path:
+        return ".png"
+    else:
+        return path.split(".")[-1]
