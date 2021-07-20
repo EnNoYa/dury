@@ -39,7 +39,7 @@ class NaverImageCralwer(SeleniumCrawler):
         retry_cnt = max_retry
 
         image_containers = []
-        while (retry_cnt > 0 and prev_num_elements < limit):
+        while (retry_cnt > 0 and prev_num_elements < 10000):
             image_containers = driver.find_elements(By.CLASS_NAME, "thumb")
             if prev_num_elements == len(image_containers):
                 retry_cnt -= 1

@@ -39,7 +39,7 @@ class GoogleImageCralwer(SeleniumCrawler):
         retry_cnt = max_retry
 
         image_containers = []
-        while (retry_cnt > 0 and prev_num_elements < limit):
+        while (retry_cnt > 0 and prev_num_elements < 10000):
             image_containers = driver.find_elements(By.CLASS_NAME, "islib")
             if prev_num_elements == len(image_containers):
                 retry_cnt -= 1
@@ -61,7 +61,10 @@ class GoogleImageCralwer(SeleniumCrawler):
                     image_urls.append(image_url)
             except Exception as e:
                 logger.error(e)
-        return image_urls
+
+        tag_elements = driver.find_elements(By.CLASS_NAME, "UwAaac")
+        rel_keywords = [ tag_element.text for tag_element in tag_elements ]
+        return image_urls, rel_keywords
 
     def download_images(
         self,
