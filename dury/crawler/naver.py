@@ -58,7 +58,14 @@ class NaverImageCralwer(SeleniumCrawler):
                     image_urls.append(image_url)
             except Exception as e:
                 logger.error(e)
-        return image_urls
+
+        rel_keywords = []
+        tag_containers = driver.find_elements(By.CLASS_NAME, "tag_bx")
+        for tag_container in tag_containers:
+            tag_elements = tag_container.find_elements(By.CLASS_NAME, "txt")
+            tags = [ tag_element.text for tag_element in tag_elements ]
+            rel_keywords += tags
+        return image_urls, rel_keywords
 
     def download_images(
         self,
