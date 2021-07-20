@@ -11,11 +11,11 @@ from .base import SeleniumCrawler
 from dury.utils import download, get_extension
 
 
-class GoogleImageCralwer(SeleniumCrawler):
-    GOOGLE_URL = "https://www.google.com"
+class NaverImageCralwer(SeleniumCrawler):
+    NAVER_SEARCH_URL = "https://search.naver.com/"
 
     def __init__(self, *args, **kwargs) -> None:
-        super(GoogleImageCralwer, self).__init__(*args, **kwargs)
+        super(NaverImageCralwer, self).__init__(*args, **kwargs)
 
     def run_on_keyword(self, keyword: str, *, limit: Optional[int] = 100):
         driver = self._launch()
@@ -32,7 +32,7 @@ class GoogleImageCralwer(SeleniumCrawler):
         limit: Optional[int] = 100,
         max_retry: Optional[int] = 5
     ):
-        image_search_url = f"{self.GOOGLE_URL}/search?q={keyword}&tbm=isch"
+        image_search_url = f"{self.NAVER_SEARCH_URL}/search.naver?where=image&query={keyword}"
         driver.get(image_search_url)
 
         prev_num_elements = 0
@@ -40,7 +40,7 @@ class GoogleImageCralwer(SeleniumCrawler):
 
         image_containers = []
         while (retry_cnt > 0 and prev_num_elements < limit):
-            image_containers = driver.find_elements(By.CLASS_NAME, "islib")
+            image_containers = driver.find_elements(By.CLASS_NAME, "thumb")
             if prev_num_elements == len(image_containers):
                 retry_cnt -= 1
             else:
@@ -51,11 +51,8 @@ class GoogleImageCralwer(SeleniumCrawler):
 
         image_urls = []
         for image_container in image_containers[:limit]:
-            image_container.click()
-            self._delay(0.5)
             try:
-                image_link = driver.find_elements(By.XPATH, ".//a[@role='link']")[2]
-                image_element = image_link.find_element(By.TAG_NAME, "img")
+                image_element = image_container.find_element(By.TAG_NAME, "img")
                 image_url = image_element.get_attribute("src")
                 if "http" in image_url[:4]:
                     image_urls.append(image_url)
@@ -66,7 +63,7 @@ class GoogleImageCralwer(SeleniumCrawler):
     def download_images(
         self,
         image_urls: List[str], *,
-        output_dir: Optional[str] = "output/google",
+        output_dir: Optional[str] = "output/naver",
         num_workers: Optional[int] = 10
     ):
         if not os.path.exists(output_dir):
