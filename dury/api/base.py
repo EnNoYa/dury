@@ -1,6 +1,7 @@
 import requests
 from typing import Optional, Dict, Any
 
+
 class APIWrapper:
     def __init__(
         self,
