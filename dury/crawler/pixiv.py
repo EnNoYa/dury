@@ -122,6 +122,7 @@ class PixivCrawler(SeleniumCrawler):
         artwork_urls: Optional[List[str]] = []
     ) -> List[str]:
         driver.get(illustration_url)
+        self._delay()
 
         image_cards = self._find_cards(driver)
 
